@@ -26,12 +26,16 @@
 	import C4Breadcrumb from '$lib/c4/C4Breadcrumb.svelte';
 	import {
 		isC4Mode,
+		isEditingC4Doc,
+		inC4Navigation,
 		getC4Level,
 		getC4Trail,
 		getCurrentFrame,
 		getActiveDocumentRef,
 		enterC4,
 		exitC4,
+		editTopFrame,
+		resumeC4View,
 		drillIntoDocument,
 		navigateUpTo,
 	} from '$lib/c4/c4State.svelte';
@@ -149,6 +153,18 @@
 	/** Saved viewport before entering C4 mode — restored on exit. */
 	let savedViewport: Viewport | null = null;
 
+	/**
+	 * Snapshot of the editable root document, captured when navigation begins. If we
+	 * descend into and edit a child document (which swaps the editable canvas), this
+	 * lets the root crumb restore the original document exactly as we left it.
+	 */
+	let savedRootModel: CalmArchitecture | null = null;
+	let savedRootNodes: Node[] = [];
+	let savedRootEdges: Edge[] = [];
+	let savedRootDirty = false;
+	/** True once an "Edit this layer" replaced the editable canvas during navigation. */
+	let c4CanvasSwapped = false;
+
 	// ─── C4 navigation (one unified drill trail; the doc registry resolves links) ─
 	/** Projection of the active LOADED document; empty when the root model is active. */
 	let c4DocNodes = $state.raw<Node[]>([]);
@@ -167,10 +183,11 @@
 
 	/** Reset all C4 navigation state (load/new/workspace-switch). */
 	function resetC4Navigation() {
-		if (isC4Mode()) exitC4();
+		if (inC4Navigation()) exitC4();
 		c4DocNodes = [];
 		c4DocEdges = [];
 		c4DocLoading = false;
+		c4CanvasSwapped = false;
 		c4SeriesHint = false;
 		setC4NavNotice(null);
 		// NB: the document registry is NOT cleared here — it accumulates across
@@ -384,16 +401,34 @@
 	function enterC4ForCurrentDoc() {
 		savedViewport = canvas?.saveViewport?.() ?? null;
 		const model = getModel();
+		// Snapshot the editable root (deep copies — the live model/canvas get swapped
+		// if we edit a descendant) so the root crumb can restore it.
+		savedRootModel = JSON.parse(getModelJson()) as CalmArchitecture;
+		savedRootNodes = JSON.parse(JSON.stringify(nodes)) as Node[];
+		savedRootEdges = JSON.parse(JSON.stringify(edges)) as Edge[];
+		savedRootDirty = getIsDirty();
+		c4CanvasSwapped = false;
 		enterC4(model.nodes?.[0]?.name ?? 'Architecture', readModelC4Level(model.metadata) ?? 'context');
 		announceActive();
 	}
 
 	function exitC4AndRestore() {
+		const restoreRoot = c4CanvasSwapped && savedRootModel !== null;
 		exitC4();
 		c4DocNodes = [];
 		c4DocEdges = [];
 		c4DocLoading = false;
+		c4CanvasSwapped = false;
 		setC4NavNotice(null);
+		if (restoreRoot) {
+			// We swapped the editable canvas to a child while navigating — bring the
+			// original root document back exactly as we left it (dirty state included).
+			applyFromJson(savedRootModel!);
+			nodes = markDrillableNodes(savedRootNodes);
+			edges = savedRootEdges;
+			if (savedRootDirty) markDirty();
+			else markClean();
+		}
 		tick().then(() => {
 			if (savedViewport) {
 				canvas?.restoreViewport?.(savedViewport);
@@ -434,8 +469,29 @@
 		if (importing) return;
 		const resolves = (r: string) => resolveC4Document(r) !== undefined;
 		if (!isDrillable(node, resolves)) return;
-		enterC4ForCurrentDoc();
+		if (isEditingC4Doc()) {
+			// Drilling deeper out of a document we're editing: keep the existing trail,
+			// persist the in-progress edits, and return the current top to the read-only
+			// view so handleC4Drill (which requires it) can follow the link.
+			persistEditedC4Doc();
+			resumeC4View();
+		} else {
+			enterC4ForCurrentDoc();
+		}
 		handleC4Drill(node);
+	}
+
+	/**
+	 * Persist the in-progress edits to the drilled document currently being edited
+	 * back into the in-session registry, so climbing the trail doesn't lose them.
+	 * No-op unless a drilled document is being edited.
+	 */
+	function persistEditedC4Doc() {
+		if (!isEditingC4Doc()) return;
+		const ref = getActiveDocumentRef();
+		if (!ref) return;
+		applyFromCanvas(nodes, edges); // flush latest canvas state into the model
+		registerC4Document(ref, getModel());
 	}
 
 	/** Drill the selected node via keyboard (Enter/Space) — parity with double-click. */
@@ -457,6 +513,7 @@
 	}
 
 	function handleBreadcrumbNavigate(index: number) {
+		persistEditedC4Doc(); // capture edits to the doc we're leaving, if any
 		const frame = navigateUpTo(index);
 		// The root crumb is the editable document — returning to it exits navigation.
 		if (!frame || frame.ref === null) {
@@ -475,7 +532,10 @@
 		const ref = getActiveDocumentRef();
 		const target = ref ? resolveC4Document(ref) : undefined;
 		if (!target) return;
-		exitC4();
+		// Keep the trail alive (editTopFrame, not exitC4) so the breadcrumb still
+		// offers a way back to the parent while this document is being edited.
+		editTopFrame();
+		c4CanvasSwapped = true;
 		c4DocNodes = [];
 		c4DocEdges = [];
 		c4DocLoading = false;
@@ -1476,8 +1536,9 @@
 							role="main"
 							onkeydown={handleCanvasKeydown}
 						>
-							<!-- C4 Breadcrumb navigation bar (visible only in C4 mode) -->
-							{#if isC4Mode()}
+							<!-- C4 Breadcrumb — shown whenever a trail exists: the read-only
+							     navigation view OR while editing a drilled-into document. -->
+							{#if inC4Navigation()}
 								<C4Breadcrumb
 									level={getC4Level()!}
 									rootLabel={getC4Trail()[0]?.label ?? 'Context'}
@@ -1486,7 +1547,9 @@
 										.map((f, i) => ({ nodeId: String(i), label: f.label }))}
 									onnavigate={handleBreadcrumbNavigate}
 									levelBadge={getC4Level()!.charAt(0).toUpperCase() + getC4Level()!.slice(1)}
-									oneditdocument={getActiveDocumentRef() ? handleEditCurrentDoc : undefined}
+									oneditdocument={!isEditingC4Doc() && getActiveDocumentRef()
+										? handleEditCurrentDoc
+										: undefined}
 								/>
 							{/if}
 							{#if c4NavNotice}

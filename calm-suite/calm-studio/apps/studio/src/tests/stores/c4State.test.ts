@@ -5,12 +5,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
 	isC4Mode,
+	isEditingC4Doc,
+	inC4Navigation,
 	getC4Level,
 	getC4Trail,
 	getCurrentFrame,
 	getActiveDocumentRef,
 	enterC4,
 	exitC4,
+	editTopFrame,
+	resumeC4View,
 	drillIntoDocument,
 	navigateUpTo,
 	resetC4State,
@@ -91,6 +95,65 @@ describe('c4State — navigateUpTo', () => {
 		expect(getC4Trail()).toHaveLength(3);
 		expect(navigateUpTo(-1)).toBeNull();
 		expect(getC4Trail()).toHaveLength(3);
+	});
+});
+
+describe('c4State — editing a drilled document', () => {
+	beforeEach(() => {
+		enterC4('Root', 'context');
+		drillIntoDocument('ref-a', 'A', 'container');
+	});
+
+	it('starts inactive (initial state is neither read-only nor editing)', () => {
+		resetC4State();
+		expect(isEditingC4Doc()).toBe(false);
+		expect(inC4Navigation()).toBe(false);
+	});
+
+	it('drilling shows the read-only view, not the editor', () => {
+		expect(isC4Mode()).toBe(true);
+		expect(isEditingC4Doc()).toBe(false);
+		expect(inC4Navigation()).toBe(true);
+	});
+
+	it('editTopFrame switches the top frame to editable, keeping the trail', () => {
+		editTopFrame();
+		expect(isC4Mode()).toBe(false); // read-only view is off …
+		expect(isEditingC4Doc()).toBe(true); // … because we're editing
+		expect(inC4Navigation()).toBe(true); // breadcrumb still shows
+		expect(getC4Trail()).toHaveLength(2);
+		expect(getActiveDocumentRef()).toBe('ref-a');
+		expect(getC4Level()).toBe('container'); // level available while editing
+	});
+
+	it('resumeC4View returns to read-only without changing the trail', () => {
+		editTopFrame();
+		resumeC4View();
+		expect(isC4Mode()).toBe(true);
+		expect(isEditingC4Doc()).toBe(false);
+		expect(getC4Trail()).toHaveLength(2);
+	});
+
+	it('drilling deeper after editing clears the editing flag', () => {
+		editTopFrame();
+		drillIntoDocument('ref-b', 'B', 'component');
+		expect(isEditingC4Doc()).toBe(false);
+		expect(isC4Mode()).toBe(true);
+		expect(getC4Trail()).toHaveLength(3);
+	});
+
+	it('navigating up from an edited doc returns to a read-only ancestor', () => {
+		editTopFrame();
+		navigateUpTo(0);
+		expect(isEditingC4Doc()).toBe(false);
+		expect(isC4Mode()).toBe(true);
+	});
+
+	it('exitC4 clears the editing flag too', () => {
+		editTopFrame();
+		exitC4();
+		expect(isEditingC4Doc()).toBe(false);
+		expect(inC4Navigation()).toBe(false);
 	});
 });
 

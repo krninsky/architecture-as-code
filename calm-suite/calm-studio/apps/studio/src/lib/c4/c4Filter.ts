@@ -264,6 +264,28 @@ export function isDrillable(node: Node, resolves: (ref: string) => boolean): boo
 	return !!(ref && resolves(ref));
 }
 
+/**
+ * Leaf CALM node types — concrete endpoints that don't contain a further
+ * architecture, so they shouldn't author a `detailed-architecture` link.
+ */
+const LEAF_NODE_TYPES = new Set([
+	'actor',
+	'database',
+	'network',
+	'ldap',
+	'webclient',
+	'data-asset',
+]);
+
+/**
+ * Whether a node type can elaborate into a detailed architecture (the C4 drill).
+ * Everything that "contains things" qualifies — system, service, ecosystem, and
+ * extension types (e.g. `ai:llm`); the concrete leaf types do not.
+ */
+export function canDefineContents(calmType: string): boolean {
+	return !LEAF_NODE_TYPES.has(calmType);
+}
+
 // ─── Style Injection ──────────────────────────────────────────────────────────
 
 /**

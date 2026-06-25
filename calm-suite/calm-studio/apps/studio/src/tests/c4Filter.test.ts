@@ -12,6 +12,7 @@ import {
 	getChildrenOf,
 	hasDrillableChildren,
 	applyC4Styles,
+	canDefineContents,
 } from '$lib/c4/c4Filter';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -53,6 +54,23 @@ function makeEdge(id: string, source: string, target: string): Edge {
 }
 
 // ─── classifyNodeC4Level ─────────────────────────────────────────────────────
+
+describe('canDefineContents', () => {
+	it('allows container-capable types (system, service, ecosystem)', () => {
+		expect(canDefineContents('system')).toBe(true);
+		expect(canDefineContents('service')).toBe(true);
+		expect(canDefineContents('ecosystem')).toBe(true);
+	});
+	it('allows extension types (e.g. ai:llm, fluxnova:engine)', () => {
+		expect(canDefineContents('ai:llm')).toBe(true);
+		expect(canDefineContents('fluxnova:engine')).toBe(true);
+	});
+	it('disallows concrete leaf types', () => {
+		for (const t of ['actor', 'database', 'network', 'ldap', 'webclient', 'data-asset']) {
+			expect(canDefineContents(t)).toBe(false);
+		}
+	});
+});
 
 describe('classifyNodeC4Level', () => {
 	it('returns context for actor', () => {

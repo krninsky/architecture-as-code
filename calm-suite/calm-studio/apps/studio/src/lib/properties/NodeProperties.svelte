@@ -19,6 +19,7 @@
 	import GemaraSections from './GemaraSections.svelte';
 	import DetailsLinkSection from './DetailsLinkSection.svelte';
 	import CustomMetadata from './CustomMetadata.svelte';
+	import { canDefineContents } from '$lib/c4/c4Filter';
 
 	let {
 		node,
@@ -235,6 +236,15 @@
 	<!-- Interfaces section -->
 	<InterfaceList nodeId={node.data?.calmId} interfaces={node.data?.interfaces ?? []} {onmutate} />
 
+	<!-- C4 detailed-architecture link authoring — only for node types that can
+	     contain a further architecture (not concrete leaves like database/actor).
+	     ({#key} remounts per selection.) -->
+	{#if canDefineContents(calmType)}
+		{#key node.id}
+			<DetailsLinkSection {node} {onmutate} />
+		{/key}
+	{/if}
+
 	<!-- Controls section (CALM 1.2) -->
 	<ControlsList
 		controls={node.data?.controls}
@@ -247,11 +257,6 @@
 	/>
 
 	<GemaraSections elementId={String(node.data.calmId)} {onmutate} />
-
-	<!-- C4 detailed-architecture link authoring ({#key} remounts per selection) -->
-	{#key node.id}
-		<DetailsLinkSection {node} {onmutate} />
-	{/key}
 
 	<!-- Custom metadata section -->
 	<CustomMetadata nodeId={node.data?.calmId} metadata={node.data?.customMetadata ?? {}} {onmutate} />
