@@ -29,7 +29,7 @@ describe('DetailsLinkSection — authoring the C4 link', () => {
 	it('writes details.detailed-architecture + required-pattern into the model', async () => {
 		applyFromJson(archWith());
 		const utils = render(DetailsLinkSection, { props: { node: nodeFor(), onmutate: vi.fn() } });
-		await fireEvent.click(utils.getByRole('button', { name: /detailed architecture/i }));
+		await fireEvent.click(utils.getByRole('button', { name: /define system contents/i }));
 
 		const da = utils.getByPlaceholderText(/detailed CALM document/i);
 		await fireEvent.input(da, { target: { value: 'https://x/agent-layer.arch.json' } });
@@ -81,7 +81,7 @@ describe('DetailsLinkSection — authoring the C4 link', () => {
 		});
 		applyFromJson(archWith());
 		const utils = render(DetailsLinkSection, { props: { node: nodeFor(), onmutate: vi.fn() } });
-		await fireEvent.click(utils.getByRole('button', { name: /detailed architecture/i }));
+		await fireEvent.click(utils.getByRole('button', { name: /define system contents/i }));
 
 		const picker = utils.getByRole('combobox'); // the registered-doc <select>
 		await fireEvent.change(picker, { target: { value: 'agent-layer.arch.json' } });
@@ -91,7 +91,7 @@ describe('DetailsLinkSection — authoring the C4 link', () => {
 	it('omits the picker when no documents are registered', async () => {
 		applyFromJson(archWith());
 		const utils = render(DetailsLinkSection, { props: { node: nodeFor() } });
-		await fireEvent.click(utils.getByRole('button', { name: /detailed architecture/i }));
+		await fireEvent.click(utils.getByRole('button', { name: /define system contents/i }));
 		expect(utils.queryByRole('combobox')).toBeNull();
 	});
 });
