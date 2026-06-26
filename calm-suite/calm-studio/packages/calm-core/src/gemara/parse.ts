@@ -124,15 +124,51 @@ function parseControl(raw: unknown, fallbackId?: string): GemaraControl | undefi
   };
 }
 
-/** Extract a controls array from either an array or an id-keyed object. */
-function extractControls(raw: unknown): GemaraControl[] {
+/** Coerce a hub body, pasted JSON string, or object into a catalog record. */
+function coerceCatalogObject(input: unknown): Record<string, unknown> {
+  let value: unknown = input;
+  if (typeof input === 'string') {
+    try {
+      value = JSON.parse(input);
+    } catch {
+      throw new GemaraParseError('Catalog is not valid JSON');
+    }
+  }
+  if (!isRecord(value)) {
+    throw new GemaraParseError('Catalog must be a JSON object');
+  }
+  return value;
+}
+
+/**
+ * Pull catalog metadata (id, title, version) from a `metadata` block or the top
+ * level. Real catalogs (e.g. OSPS, CCC) carry the title at the top level, so the
+ * title falls back there when metadata has none.
+ */
+function extractCatalogMetadata(value: Record<string, unknown>): GemaraCatalogMetadata {
+  const metaRaw = isRecord(value['metadata']) ? value['metadata'] : value;
+  const id = pickString(metaRaw, 'id', 'catalog-id', 'catalogId');
+  const title = pickString(metaRaw, 'title', 'name') ?? pickString(value, 'title', 'name');
+  const version = pickString(metaRaw, 'version');
+  return {
+    ...(id !== undefined ? { id } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(version !== undefined ? { version } : {}),
+  };
+}
+
+/** Extract a typed list from either an array or an id-keyed object. */
+function extractCollection<T>(
+  raw: unknown,
+  parse: (value: unknown, fallbackId?: string) => T | undefined,
+): T[] {
   if (Array.isArray(raw)) {
-    return raw.map((c) => parseControl(c)).filter((c): c is GemaraControl => c !== undefined);
+    return raw.map((v) => parse(v)).filter((v): v is T => v !== undefined);
   }
   if (isRecord(raw)) {
     return Object.entries(raw)
-      .map(([key, value]) => parseControl(value, key))
-      .filter((c): c is GemaraControl => c !== undefined);
+      .map(([key, value]) => parse(value, key))
+      .filter((v): v is T => v !== undefined);
   }
   return [];
 }
@@ -143,39 +179,12 @@ function extractControls(raw: unknown): GemaraControl[] {
  * has no recognisable controls.
  */
 export function parseControlCatalog(input: unknown): GemaraControlCatalog {
-  let value: unknown = input;
-  if (typeof input === 'string') {
-    try {
-      value = JSON.parse(input);
-    } catch {
-      throw new GemaraParseError('Catalog is not valid JSON');
-    }
-  }
-
-  if (!isRecord(value)) {
-    throw new GemaraParseError('Catalog must be a JSON object');
-  }
-
-  const metaRaw = isRecord(value['metadata']) ? value['metadata'] : value;
-  const id = pickString(metaRaw, 'id', 'catalog-id', 'catalogId');
-  // Real catalogs (e.g. OSPS, CCC) carry the catalog title at the top level, not
-  // inside metadata — fall back to it when metadata has no title.
-  const title = pickString(metaRaw, 'title', 'name') ?? pickString(value, 'title', 'name');
-  const version = pickString(metaRaw, 'version');
-
-  const controls = extractControls(value['controls']);
+  const value = coerceCatalogObject(input);
+  const controls = extractCollection(value['controls'], parseControl);
   if (controls.length === 0) {
     throw new GemaraParseError('Catalog has no controls');
   }
-
-  return {
-    metadata: {
-      ...(id !== undefined ? { id } : {}),
-      ...(title !== undefined ? { title } : {}),
-      ...(version !== undefined ? { version } : {}),
-    },
-    controls,
-  };
+  return { metadata: extractCatalogMetadata(value), controls };
 }
 
 /**
@@ -185,32 +194,11 @@ export function parseControlCatalog(input: unknown): GemaraControlCatalog {
  * control catalogs. Throws only when the input isn't a recognisable catalog.
  */
 export function parseCatalogMetadata(input: unknown): GemaraCatalogMetadata {
-  let value: unknown = input;
-  if (typeof input === 'string') {
-    try {
-      value = JSON.parse(input);
-    } catch {
-      throw new GemaraParseError('Catalog is not valid JSON');
-    }
-  }
-  if (!isRecord(value)) {
-    throw new GemaraParseError('Catalog must be a JSON object');
-  }
-
-  const metaRaw = isRecord(value['metadata']) ? value['metadata'] : value;
-  const id = pickString(metaRaw, 'id', 'catalog-id', 'catalogId');
-  const title = pickString(metaRaw, 'title', 'name') ?? pickString(value, 'title', 'name');
-  const version = pickString(metaRaw, 'version');
-
-  if (id === undefined && title === undefined) {
+  const metadata = extractCatalogMetadata(coerceCatalogObject(input));
+  if (metadata.id === undefined && metadata.title === undefined) {
     throw new GemaraParseError('Not a recognisable Gemara catalog (no id or title)');
   }
-
-  return {
-    ...(id !== undefined ? { id } : {}),
-    ...(title !== undefined ? { title } : {}),
-    ...(version !== undefined ? { version } : {}),
-  };
+  return metadata;
 }
 
 function parseGuideline(raw: unknown, fallbackId?: string): GemaraGuideline | undefined {
@@ -228,51 +216,15 @@ function parseGuideline(raw: unknown, fallbackId?: string): GemaraGuideline | un
   };
 }
 
-function extractGuidelines(raw: unknown): GemaraGuideline[] {
-  if (Array.isArray(raw)) {
-    return raw.map((g) => parseGuideline(g)).filter((g): g is GemaraGuideline => g !== undefined);
-  }
-  if (isRecord(raw)) {
-    return Object.entries(raw)
-      .map(([key, value]) => parseGuideline(value, key))
-      .filter((g): g is GemaraGuideline => g !== undefined);
-  }
-  return [];
-}
-
 /**
  * Parse a Gemara guidance catalog (e.g. AIGF `finos-air`) from a hub body or a
  * pasted/object catalog. Throws GemaraParseError if it has no guidelines.
  */
 export function parseGuidanceCatalog(input: unknown): GemaraGuidanceCatalog {
-  let value: unknown = input;
-  if (typeof input === 'string') {
-    try {
-      value = JSON.parse(input);
-    } catch {
-      throw new GemaraParseError('Catalog is not valid JSON');
-    }
-  }
-  if (!isRecord(value)) {
-    throw new GemaraParseError('Catalog must be a JSON object');
-  }
-
-  const metaRaw = isRecord(value['metadata']) ? value['metadata'] : value;
-  const id = pickString(metaRaw, 'id', 'catalog-id', 'catalogId');
-  const title = pickString(metaRaw, 'title', 'name') ?? pickString(value, 'title', 'name');
-  const version = pickString(metaRaw, 'version');
-
-  const guidelines = extractGuidelines(value['guidelines']);
+  const value = coerceCatalogObject(input);
+  const guidelines = extractCollection(value['guidelines'], parseGuideline);
   if (guidelines.length === 0) {
     throw new GemaraParseError('Catalog has no guidelines');
   }
-
-  return {
-    metadata: {
-      ...(id !== undefined ? { id } : {}),
-      ...(title !== undefined ? { title } : {}),
-      ...(version !== undefined ? { version } : {}),
-    },
-    guidelines,
-  };
+  return { metadata: extractCatalogMetadata(value), guidelines };
 }

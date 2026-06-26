@@ -37,10 +37,12 @@ export interface SidecarData {
  * sidecarNameFor('my-diagram.calm.json')    // 'my-diagram.calm.calmstudio.json'
  */
 export function sidecarNameFor(diagramName: string): string {
-	if (diagramName.endsWith('.json')) {
-		return diagramName.slice(0, -5) + '.calmstudio.json';
-	}
-	return diagramName + '.calmstudio.json';
+	return stripJsonExt(diagramName) + '.calmstudio.json';
+}
+
+/** Strip a trailing `.json` extension; other names are returned unchanged. */
+export function stripJsonExt(name: string): string {
+	return name.endsWith('.json') ? name.slice(0, -5) : name;
 }
 
 /**
@@ -104,10 +106,7 @@ export interface DecoratorSidecar {
  * decoratorSidecarNameFor('payments.arch.json')   // 'payments.arch.decorators.json'
  */
 export function decoratorSidecarNameFor(diagramName: string): string {
-	if (diagramName.endsWith('.json')) {
-		return diagramName.slice(0, -5) + '.decorators.json';
-	}
-	return diagramName + '.decorators.json';
+	return stripJsonExt(diagramName) + '.decorators.json';
 }
 
 /**

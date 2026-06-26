@@ -26,6 +26,7 @@ import {
 	sidecarNameFor,
 	buildDecoratorSidecarData,
 	decoratorSidecarNameFor,
+	stripJsonExt,
 } from '$lib/io/sidecar';
 import type { CalmArchitecture, CalmDecorator } from '@calmstudio/calm-core';
 import { buildScalerToml } from '$lib/io/scalerToml';
@@ -183,8 +184,7 @@ export function exportAsCalm(json: string, filename = 'architecture.calm.json'):
 
 /** Derive the design-zip filename from the architecture filename. */
 export function designZipNameFor(archFileName: string): string {
-	const base = archFileName.endsWith('.json') ? archFileName.slice(0, -5) : archFileName;
-	return base + '.zip';
+	return stripJsonExt(archFileName) + '.zip';
 }
 
 /**
