@@ -20,6 +20,7 @@
 	import { getModel, upsertDecorator, removeDecoratorFromElement } from '$lib/stores/calmModel.svelte';
 	import { SHOW_VERIFICATION_STATUS } from '$lib/governance/verification';
 	import GemaraCatalogPicker from './GemaraCatalogPicker.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 
 	let {
 		elementId,
@@ -35,7 +36,6 @@
 
 	const readonly = $derived(!onmutate);
 
-	let sectionExpanded = $state(false);
 	let pickerOpen = $state(false);
 
 	const links = $derived(
@@ -59,19 +59,8 @@
 	}
 </script>
 
-<div class="section">
-	<button type="button" class="section-toggle" onclick={() => (sectionExpanded = !sectionExpanded)} aria-expanded={sectionExpanded}>
-		<span class="chevron" class:open={sectionExpanded}>
-			<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-				<path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-		</span>
-		<span class="section-label">{label}</span>
-		{#if count > 0}<span class="badge">{count}</span>{/if}
-	</button>
-
-	{#if sectionExpanded}
-		<div class="body">
+<CollapsibleSection {label} {count}>
+	<div class="body">
 			{#if links.length === 0}
 				<p class="empty-hint">Nothing attached</p>
 			{:else}
@@ -127,85 +116,13 @@
 				</button>
 			{/if}
 		</div>
-	{/if}
-</div>
+</CollapsibleSection>
 
 {#if pickerOpen}
 	<GemaraCatalogPicker {elementId} {artifact} onbind={handleAttached} oncancel={() => (pickerOpen = false)} />
 {/if}
 
 <style>
-	.section {
-		border-top: 1px solid var(--color-border, #e2e8f0);
-	}
-
-	:global(.dark) .section {
-		border-color: #1e293b;
-	}
-
-	.section-toggle {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-		padding: 10px 12px 8px;
-		background: none;
-		border: none;
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.section-toggle:hover {
-		background: var(--color-surface-secondary, #f8fafc);
-	}
-
-	:global(.dark) .section-toggle:hover {
-		background: #0f172a;
-	}
-
-	.chevron {
-		display: flex;
-		align-items: center;
-		color: var(--color-text-tertiary, #94a3b8);
-		transition: transform 0.15s;
-	}
-
-	.chevron.open {
-		transform: rotate(90deg);
-	}
-
-	.section-label {
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-tertiary, #94a3b8);
-		flex: 1;
-	}
-
-	:global(.dark) .section-label {
-		color: #64748b;
-	}
-
-	.badge {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 18px;
-		height: 18px;
-		padding: 0 5px;
-		border-radius: 9px;
-		font-size: 10px;
-		font-weight: 600;
-		background: var(--color-surface-secondary, #f1f5f9);
-		color: var(--color-text-secondary, #64748b);
-	}
-
-	:global(.dark) .badge {
-		background: #1e293b;
-		color: #94a3b8;
-	}
-
 	.body {
 		padding: 0 12px 10px;
 	}

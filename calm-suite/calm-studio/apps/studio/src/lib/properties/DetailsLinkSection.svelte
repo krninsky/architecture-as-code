@@ -13,6 +13,7 @@
 	import { updateNodeProperty, getModel } from '$lib/stores/calmModel.svelte';
 	import { resolveC4Document, listC4Documents, registerC4Document } from '$lib/c4/c4Documents.svelte';
 	import { buildLinkedDocument, readC4Level } from '$lib/c4/linkedDocument';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 
 	let {
 		node,
@@ -75,19 +76,11 @@
 	}
 </script>
 
-<div class="section">
-	<button type="button" class="section-toggle" onclick={() => (expanded = !expanded)} aria-expanded={expanded}>
-		<span class="chevron" class:open={expanded}>
-			<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-				<path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-		</span>
-		<span class="section-label">Define System Contents</span>
+<CollapsibleSection label="Define System Contents" bind:expanded>
+	{#snippet indicator()}
 		{#if linked}<span class="dot" title="Linked to a detailed document" aria-label="linked"></span>{/if}
-	</button>
-
-	{#if expanded}
-		<div class="section-body">
+	{/snippet}
+	<div class="section-body">
 			<p class="hint">
 				Link this node to the document that elaborates it. The linked document's root node
 				should reuse this node's id.
@@ -143,53 +136,9 @@
 				/>
 			</label>
 		</div>
-	{/if}
-</div>
+</CollapsibleSection>
 
 <style>
-	.section {
-		border-top: 1px solid var(--color-border, #e2e8f0);
-	}
-	:global(.dark) .section {
-		border-color: #1e293b;
-	}
-	.section-toggle {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-		padding: 10px 12px 8px;
-		background: none;
-		border: none;
-		cursor: pointer;
-		text-align: left;
-	}
-	.section-toggle:hover {
-		background: var(--color-surface-secondary, #f8fafc);
-	}
-	:global(.dark) .section-toggle:hover {
-		background: #0f172a;
-	}
-	.chevron {
-		display: flex;
-		align-items: center;
-		color: var(--color-text-tertiary, #94a3b8);
-		transition: transform 0.15s;
-	}
-	.chevron.open {
-		transform: rotate(90deg);
-	}
-	.section-label {
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-secondary, #64748b);
-		flex: 1;
-	}
-	:global(.dark) .section-label {
-		color: #94a3b8;
-	}
 	.dot {
 		width: 7px;
 		height: 7px;
