@@ -95,11 +95,17 @@
 				</button>
 			{/if}
 		</div>
-		<span class="status" class:error={!!parseError} aria-live="polite">
+		<span class="status" class:error={!!parseError} aria-live="polite" title={parseError ?? undefined}>
 			<span class="status-dot"></span>
-			{parseError ? 'Invalid JSON' : 'Valid'}
+			{parseError ? 'Invalid' : 'Valid'}
 		</span>
 	</div>
+
+	<!-- Full error text — a bare status dot leaves the user guessing why a paste
+	     did nothing; surface the actual parse/validation message. -->
+	{#if parseError}
+		<div class="parse-error" role="alert">{parseError}</div>
+	{/if}
 
 	<!-- CodeMirror editor -->
 	<div class="editor-wrap">
@@ -205,6 +211,19 @@
 		background: #ef4444;
 	}
 
+	/* Inline error message bar below the tab bar */
+	.parse-error {
+		flex-shrink: 0;
+		padding: 5px 10px;
+		font-size: 11px;
+		line-height: 1.4;
+		color: #b91c1c;
+		background: rgba(239, 68, 68, 0.1);
+		border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+
 	/* Editor fill */
 	.editor-wrap {
 		flex: 1;
@@ -246,5 +265,11 @@
 
 	:global(.dark) .status {
 		color: #94a3b8;
+	}
+
+	:global(.dark) .parse-error {
+		color: #fca5a5;
+		background: rgba(239, 68, 68, 0.15);
+		border-bottom-color: rgba(239, 68, 68, 0.4);
 	}
 </style>

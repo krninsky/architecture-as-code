@@ -265,6 +265,20 @@
 		enrichNodesEdgesWithValidation();
 	}
 
+	/**
+	 * Validate immediately after loading a document (paste / file / template).
+	 * Auto-opens the panel only when there are error-severity issues — e.g. a
+	 * relationship referencing a node that doesn't exist (a missing container
+	 * renders nothing on the canvas, so the user needs to be told why). Clean
+	 * docs and warning-only docs don't nag; the badges still update.
+	 */
+	function autoValidateAfterLoad() {
+		runValidation(); // populates issues + opens the panel
+		const hasErrors = getIssues().some((i) => i.severity === 'error');
+		if (!hasErrors) closePanel();
+		enrichNodesEdgesWithValidation();
+	}
+
 	/** Strip validation data from nodes/edges so badges and edge colors disappear. */
 	function clearNodeEdgeValidation() {
 		const clearedNodes = nodes.map((n) => {
@@ -705,9 +719,30 @@
 	function handleCodeChange(newValue: string) {
 		// Debounce: wait 400ms after last change before parsing
 		clearTimeout(codeChangeTimer);
-		codeChangeTimer = setTimeout(() => {
+		codeChangeTimer = setTimeout(async () => {
 			try {
-				const parsed = JSON.parse(newValue) as CalmArchitecture;
+				let parsed: CalmArchitecture;
+				try {
+					parsed = JSON.parse(newValue) as CalmArchitecture;
+				} catch (e) {
+					codeParseError = 'Malformed JSON: ' + (e as Error).message;
+					return;
+				}
+
+				// Structural validation — mirrors importCalmFile. Without it, a
+				// syntactically valid document that isn't a CALM architecture (a
+				// pattern, a wrapped object, an array, or one missing `nodes`) either
+				// throws opaquely in applyFromJson or silently projects to an empty
+				// canvas, leaving the user with no signal about what's wrong.
+				if (!Array.isArray(parsed.nodes)) {
+					codeParseError = 'Invalid CALM JSON: missing "nodes" array';
+					return;
+				}
+				if (parsed.relationships !== undefined && !Array.isArray(parsed.relationships)) {
+					codeParseError = 'Invalid CALM JSON: "relationships" must be an array';
+					return;
+				}
+
 				codeParseError = null;
 
 				// The main panel doesn't show decorators (they live in their own
@@ -726,24 +761,55 @@
 					}
 				}
 
+				// Distinguish a wholesale replacement (pasting a new document into the
+				// editor) from an incremental edit of the current one. A replacement's
+				// nodes share no ids with the canvas, so positionMap is empty for them;
+				// calmToFlow would then fall back to a flat row that, with containment,
+				// collapses off-screen — the document loads but the canvas looks blank.
+				// Replacements take the same auto-layout + fit-view path as a file import.
+				const currentIds = new Set(
+					nodes.map((n) => n.data?.calmId as string | undefined).filter(Boolean)
+				);
+				const isReplacement =
+					currentIds.size === 0 ||
+					!parsed.nodes.some((n) => currentIds.has(n['unique-id']));
+
 				// Push undo snapshot BEFORE applying
 				pushSnapshot(nodes, edges);
 
 				// Apply to canonical model (mutex prevents re-entry)
 				const applied = applyFromJson(parsed);
 				if (applied) {
-					// Project back to Svelte Flow format, preserving positions and selection
-					const projected = calmToFlow(parsed, positionMap);
-					const selectionMap = new Map<string, boolean>();
-					for (const n of nodes) {
-						if (n.selected && n.data?.calmId) selectionMap.set(n.data.calmId as string, true);
+					if (isReplacement) {
+						// Auto-layout fresh nodes, then restore any saved arrangement
+						// (metadata.calmstudio-layout) over the top — mirrors importCalmFile.
+						const layoutMap = await layoutCalm(parsed, new Set(), 'DOWN');
+						for (const [id, pos] of Object.entries(readLayout(parsed))) {
+							const existing = layoutMap.get(id);
+							layoutMap.set(id, existing ? { ...existing, x: pos.x, y: pos.y } : { x: pos.x, y: pos.y });
+						}
+						const projected = calmToFlow(parsed, layoutMap);
+						nodes = markDrillableNodes(projected.nodes);
+						edges = projected.edges;
+						await tick();
+						canvas?.fitViewport();
+						// A pasted document is a fresh load — surface referential
+						// errors (missing nodes/containers) the same way an import does.
+						autoValidateAfterLoad();
+					} else {
+						// Incremental edit — project back preserving positions and selection.
+						const projected = calmToFlow(parsed, positionMap);
+						const selectionMap = new Map<string, boolean>();
+						for (const n of nodes) {
+							if (n.selected && n.data?.calmId) selectionMap.set(n.data.calmId as string, true);
+						}
+						nodes = projected.nodes.map((n) =>
+							selectionMap.has(n.data?.calmId as string)
+								? { ...n, selected: true }
+								: n
+						);
+						edges = projected.edges;
 					}
-					nodes = projected.nodes.map((n) =>
-						selectionMap.has(n.data?.calmId as string)
-							? { ...n, selected: true }
-							: n
-					);
-					edges = projected.edges;
 
 					// Mark dirty on code-driven changes
 					markDirty();
@@ -946,6 +1012,10 @@
 		await tick();
 		canvas?.fitViewport();
 		importing = false;
+
+		// Surface load-time problems (e.g. a relationship referencing a missing
+		// node) immediately, rather than waiting for the user to click Validate.
+		autoValidateAfterLoad();
 	}
 
 	// ─── File operations ──────────────────────────────────────────────────────

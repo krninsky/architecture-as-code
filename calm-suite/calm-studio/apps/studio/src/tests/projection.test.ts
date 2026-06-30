@@ -120,6 +120,48 @@ describe('containment is shown by nesting, not a line', () => {
 	});
 });
 
+describe('dangling references do not break the canvas', () => {
+	// A composed-of whose container is not a defined node — Svelte Flow would
+	// otherwise nest children under a missing parent and fail to render.
+	const danglingContainer: CalmArchitecture = {
+		nodes: [
+			{ 'unique-id': 'svc-1', 'node-type': 'service', name: 'A', description: '' },
+			{ 'unique-id': 'svc-2', 'node-type': 'service', name: 'B', description: '' },
+		],
+		relationships: [
+			{ 'unique-id': 'co-1', 'relationship-type': { 'composed-of': { container: 'ghost', nodes: ['svc-1', 'svc-2'] } } },
+		],
+	};
+
+	test('children of a missing container render at top level (no parentId)', () => {
+		const { nodes } = calmToFlow(danglingContainer);
+		expect(nodes).toHaveLength(2);
+		for (const n of nodes) expect(n.parentId).toBeUndefined();
+	});
+
+	test('no node points at a parent that does not exist', () => {
+		const { nodes } = calmToFlow(danglingContainer);
+		const ids = new Set(nodes.map((n) => n.id));
+		for (const n of nodes) {
+			if (n.parentId) expect(ids.has(n.parentId)).toBe(true);
+		}
+	});
+
+	test('edges to a non-existent node are dropped', () => {
+		const arch: CalmArchitecture = {
+			nodes: [{ 'unique-id': 'svc-1', 'node-type': 'service', name: 'A', description: '' }],
+			relationships: [
+				{
+					'unique-id': 'c-1',
+					'relationship-type': { connects: { source: { node: 'svc-1' }, destination: { node: 'ghost' } } },
+				},
+			],
+		};
+		const { edges } = calmToFlow(arch);
+		expect(edges).toHaveLength(0);
+	});
+});
+
 // ─── flowToCalm tests ─────────────────────────────────────────────────────────
 
 describe('flowToCalm', () => {

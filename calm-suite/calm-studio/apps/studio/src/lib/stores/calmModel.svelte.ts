@@ -64,7 +64,9 @@ export function applyFromJson(arch: CalmArchitecture): boolean {
 		// decorators, controls, …); nodes/relationships are copied as arrays.
 		// Previously this rebuilt { nodes, relationships } only, silently dropping
 		// every other section on open→save.
-		model = { ...arch, nodes: [...arch.nodes], relationships: [...arch.relationships] };
+		// Default relationships to [] — it's optional in practice and a document
+		// with nodes but no relationships must not throw an opaque "not iterable".
+		model = { ...arch, nodes: [...arch.nodes], relationships: [...(arch.relationships ?? [])] };
 	});
 }
 

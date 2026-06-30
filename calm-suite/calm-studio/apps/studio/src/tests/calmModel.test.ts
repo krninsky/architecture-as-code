@@ -91,6 +91,14 @@ describe('model CRUD', () => {
 		expect(model.nodes[0]['unique-id']).toBe('svc-1');
 	});
 
+	test('applyFromJson tolerates a document with no relationships array', () => {
+		const noRels = { nodes: [{ 'unique-id': 'svc-1', 'node-type': 'service', name: 'A', description: '' }] };
+		expect(() => applyFromJson(noRels as unknown as CalmArchitecture)).not.toThrow();
+		const model = getModel();
+		expect(model.nodes).toHaveLength(1);
+		expect(model.relationships).toEqual([]);
+	});
+
 	test('getModelJson returns JSON stringified model with 2-space indent', () => {
 		applyFromJson(baseArch);
 		const json = getModelJson();

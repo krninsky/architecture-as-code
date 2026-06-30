@@ -159,6 +159,10 @@ export function calmToFlow(
 	arch: CalmArchitecture,
 	positionMap?: Map<string, { x: number; y: number; width?: number; height?: number }>
 ): { nodes: Node[]; edges: Edge[] } {
+	// The set of ids that actually exist as nodes — used to ignore dangling
+	// references so one bad ref doesn't break the whole canvas.
+	const nodeIdSet = new Set(arch.nodes.map((n) => n['unique-id']));
+
 	// Build containment map from CALM relationships.
 	//   composed-of: container is parent of each child
 	//   deployed-in: container is parent of each child
@@ -172,6 +176,11 @@ export function calmToFlow(
 		for (const pair of expandEdgePairs(rel)) {
 			const parentId = pair.source; // container
 			const childId = pair.target;  // each child
+			// A container that isn't a defined node would make Svelte Flow nest the
+			// child under a non-existent parent ("Parent node X not found"), which
+			// breaks layout/rendering. Skip it — the child renders at top level and
+			// validation surfaces the dangling reference as an error.
+			if (!nodeIdSet.has(parentId)) continue;
 			childToParent.set(childId, parentId);
 			if (!parentChildren.has(parentId)) parentChildren.set(parentId, new Set());
 			parentChildren.get(parentId)!.add(childId);
@@ -275,7 +284,11 @@ export function calmToFlow(
 		});
 	}
 
-	return { nodes, edges };
+	// Drop edges whose endpoints aren't real nodes — Svelte Flow can't draw an
+	// edge to a missing node, and validation already reports the dangling ref.
+	const validEdges = edges.filter((e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target));
+
+	return { nodes, edges: validEdges };
 }
 
 /**
