@@ -128,4 +128,31 @@ describe('ValidationPanel', () => {
 		await fireEvent.click(getByText('Node is missing required name field'));
 		expect(onnavigatetonode).toHaveBeenCalledWith('svc-1');
 	});
+
+	it('copies the full message to the clipboard when the copy button is clicked', async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal('navigator', { clipboard: { writeText } });
+
+		const { getByRole } = render(ValidationPanel, {
+			props: { issues: [errorIssue] },
+		});
+		await fireEvent.click(getByRole('button', { name: /copy message/i }));
+		expect(writeText).toHaveBeenCalledWith('Node is missing required name field');
+
+		vi.unstubAllGlobals();
+	});
+
+	it('copy button does not trigger row navigation', async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal('navigator', { clipboard: { writeText } });
+		const onnavigatetonode = vi.fn();
+
+		const { getByRole } = render(ValidationPanel, {
+			props: { issues: [errorIssue], onnavigatetonode },
+		});
+		await fireEvent.click(getByRole('button', { name: /copy message/i }));
+		expect(onnavigatetonode).not.toHaveBeenCalled();
+
+		vi.unstubAllGlobals();
+	});
 });

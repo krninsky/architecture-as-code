@@ -81,6 +81,34 @@
 			onnavigatetonode?.(id);
 		}
 	}
+
+	// ─── Copy-to-clipboard support ──────────────────────────────────────────────
+
+	/** Stable identity for an issue — also used as the {#each} key. */
+	function issueKey(issue: ValidationIssue): string {
+		return issue.severity + ':' + (issue.nodeId ?? issue.relationshipId ?? '') + ':' + issue.message;
+	}
+
+	/** Key of the issue most recently copied — drives the transient "Copied" tick. */
+	let copiedKey = $state<string | null>(null);
+	let copyResetTimer: ReturnType<typeof setTimeout>;
+
+	/**
+	 * Copy an issue's full message to the clipboard. Rows truncate the message
+	 * with an ellipsis, so this is the reliable way to grab the whole text.
+	 * Stops propagation so the row's navigate-to-node click doesn't also fire.
+	 */
+	async function copyIssue(issue: ValidationIssue, event: MouseEvent) {
+		event.stopPropagation();
+		try {
+			await navigator.clipboard.writeText(issue.message);
+			copiedKey = issueKey(issue);
+			clearTimeout(copyResetTimer);
+			copyResetTimer = setTimeout(() => (copiedKey = null), 1500);
+		} catch {
+			// Clipboard unavailable (e.g. insecure context) — nothing else to do.
+		}
+	}
 </script>
 
 <div class="validation-panel">
@@ -113,7 +141,7 @@
 				<span>No validation issues</span>
 			</div>
 		{:else}
-			{#each sortedIssues as issue (issue.severity + ':' + (issue.nodeId ?? issue.relationshipId ?? '') + ':' + issue.message)}
+			{#each sortedIssues as issue (issueKey(issue))}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
@@ -155,6 +183,27 @@
 					{#if issue.nodeId ?? issue.relationshipId}
 						<span class="vp-id-badge">{issue.nodeId ?? issue.relationshipId}</span>
 					{/if}
+
+					<!-- Copy full message — rows truncate, so this grabs the whole text -->
+					<button
+						type="button"
+						class="vp-copy"
+						class:copied={copiedKey === issueKey(issue)}
+						onclick={(e) => copyIssue(issue, e)}
+						aria-label="Copy message"
+						title={copiedKey === issueKey(issue) ? 'Copied!' : 'Copy message'}
+					>
+						{#if copiedKey === issueKey(issue)}
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<polyline points="20 6 9 17 4 12" />
+							</svg>
+						{:else}
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+								<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+							</svg>
+						{/if}
+					</button>
 				</div>
 			{/each}
 		{/if}
@@ -343,5 +392,51 @@
 		color: #64748b;
 		background: #111827;
 		border-color: #1e293b;
+	}
+
+	/* ─── Copy button ─────────────────────────────────────────────── */
+
+	.vp-copy {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		padding: 3px;
+		border: none;
+		border-radius: 4px;
+		background: none;
+		cursor: pointer;
+		color: var(--color-text-tertiary, #94a3b8);
+		/* Always visible (dimmed) for discoverability; brightens on hover. */
+		opacity: 0.55;
+		transition: opacity 0.1s, background 0.1s, color 0.1s;
+	}
+
+	.vp-row:hover .vp-copy,
+	.vp-copy:focus-visible {
+		opacity: 0.85;
+	}
+
+	.vp-copy:hover {
+		opacity: 1;
+		background: rgba(0, 0, 0, 0.06);
+	}
+
+	/* Copied state stays visible (green tick) even after the pointer leaves. */
+	.vp-copy.copied {
+		opacity: 1;
+		color: #16a34a;
+	}
+
+	:global(.dark) .vp-copy {
+		color: #64748b;
+	}
+
+	:global(.dark) .vp-copy:hover {
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	:global(.dark) .vp-copy.copied {
+		color: #4ade80;
 	}
 </style>
