@@ -5,6 +5,7 @@
 	import { initAllPacks } from '@calmstudio/extensions';
 	import { type Node, type Edge, SvelteFlowProvider, type Viewport } from '@xyflow/svelte';
 	import { tick, onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import { PaneGroup, Pane, PaneResizer } from 'paneforge';
 
 	// Register all extension packs at module load time — before any component renders.
@@ -1455,6 +1456,57 @@
 		};
 	});
 
+	// ─── Presentation (display-only) mode ────────────────────────────────────
+
+	/** When true, every panel and control is hidden and the diagram fills the
+	 *  screen — a read-only stage for showing an architecture to a room. */
+	let displayOnly = $state(false);
+	/** One-time "Press Esc to exit" affordance shown right after entering. */
+	let presentationHint = $state(false);
+	let presentationHintTimer: ReturnType<typeof setTimeout>;
+
+	async function enterPresentation() {
+		displayOnly = true;
+		// Go truly fullscreen too; display-only still works if the browser blocks it.
+		try {
+			await document.documentElement.requestFullscreen?.();
+		} catch {
+			/* fullscreen denied — the chrome-free stage is enough on its own */
+		}
+		// Frame the whole diagram in the new full-bleed stage.
+		await tick();
+		canvas?.fitViewport?.();
+		// Tell the user how to leave, then get out of the way.
+		presentationHint = true;
+		clearTimeout(presentationHintTimer);
+		presentationHintTimer = setTimeout(() => (presentationHint = false), 2800);
+	}
+
+	function exitPresentation() {
+		if (!displayOnly) return;
+		displayOnly = false;
+		presentationHint = false;
+		clearTimeout(presentationHintTimer);
+		if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+	}
+
+	onMount(() => {
+		// Esc leaves the stage; so does dropping out of browser fullscreen by any
+		// means (F11, the native Esc). Both routes funnel through exitPresentation.
+		function onKey(e: KeyboardEvent) {
+			if (e.key === 'Escape' && displayOnly) exitPresentation();
+		}
+		function onFsChange() {
+			if (!document.fullscreenElement && displayOnly) exitPresentation();
+		}
+		window.addEventListener('keydown', onKey);
+		document.addEventListener('fullscreenchange', onFsChange);
+		return () => {
+			window.removeEventListener('keydown', onKey);
+			document.removeEventListener('fullscreenchange', onFsChange);
+		};
+	});
+
 	// ─── Document title + beforeunload reactive update ──────────────────────
 
 	$effect(() => {
@@ -1481,7 +1533,7 @@
 </script>
 
 <DnDProvider>
-	<div class="app-shell">
+	<div class="app-shell" class:display-only={displayOnly}>
 		<!-- Top: Slim toolbar -->
 		<Toolbar
 			onopen={handleOpen}
@@ -1607,8 +1659,9 @@
 							onkeydown={handleCanvasKeydown}
 						>
 							<!-- C4 Breadcrumb — shown whenever a trail exists: the read-only
-							     navigation view OR while editing a drilled-into document. -->
-							{#if inC4Navigation()}
+							     navigation view OR while editing a drilled-into document.
+							     Hidden in presentation mode along with all other chrome. -->
+							{#if inC4Navigation() && !displayOnly}
 								<C4Breadcrumb
 									level={getC4Level()!}
 									rootLabel={getC4Trail()[0]?.label ?? 'Context'}
@@ -1626,8 +1679,9 @@
 								<div class="c4-nav-notice" role="alert">{c4NavNotice}</div>
 							{/if}
 
-							<!-- Floating toolbar (layout controls + dark mode toggle) -->
+							<!-- Floating toolbar (layout controls + dark mode + presentation) -->
 							<div class="canvas-toolbar">
+								{#if !displayOnly}
 								<!-- Auto-layout controls -->
 								<div class="layout-group" role="group" aria-label="Auto-layout controls">
 									<!-- Direction dropdown -->
@@ -1679,7 +1733,38 @@
 										</svg>
 									{/if}
 								</button>
+
+								<!-- Presentation mode — hide every panel, fill the screen -->
+								<button
+									onclick={enterPresentation}
+									class="canvas-toolbar-btn"
+									aria-label="Enter presentation mode"
+									title="Presentation mode — hide panels"
+								>
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+									</svg>
+								</button>
+								{:else}
+								<!-- Exit presentation -->
+								<button
+									onclick={exitPresentation}
+									class="canvas-toolbar-btn"
+									aria-label="Exit presentation mode"
+									title="Exit presentation (Esc)"
+								>
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+									</svg>
+								</button>
+								{/if}
 							</div>
+
+							{#if displayOnly && presentationHint}
+								<div class="presentation-hint" role="status" transition:fade={{ duration: 200 }}>
+									Press <kbd>Esc</kbd> to exit
+								</div>
+							{/if}
 
 							<SvelteFlowProvider>
 								{#if isC4Mode() && c4DocLoading}
@@ -1716,8 +1801,8 @@
 									/>
 								{/if}
 
-								<!-- Empty canvas start-from-template prompt -->
-								{#if !isC4Mode() && nodes.length === 0}
+								<!-- Empty canvas start-from-template prompt (hidden in presentation) -->
+								{#if !isC4Mode() && nodes.length === 0 && !displayOnly}
 									<div class="empty-canvas-hint">
 										<p class="empty-hint-text">Drop a node from the palette or</p>
 										<button
@@ -2222,6 +2307,49 @@
 	:global(.dark) .canvas-toolbar-btn:hover {
 		background: #1e293b;
 		color: #e2e8f0;
+	}
+
+	/* ─── Presentation (display-only) mode ─────────────────────────── */
+
+	/* Lift the canvas onto a full-viewport stage. Because it's fixed with a high
+	   z-index, it covers the top bar, palette, inspector, JSON editor and
+	   Problems panel without touching the pane layout — exit just drops it back. */
+	.app-shell.display-only .canvas-pane {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+	}
+
+	/* Transient "Press Esc to exit" pill, bottom-center, out of the diagram's way. */
+	.presentation-hint {
+		position: absolute;
+		left: 50%;
+		bottom: 26px;
+		transform: translateX(-50%);
+		z-index: 60;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 7px 14px;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.82);
+		color: #e2e8f0;
+		font-family: var(--font-sans, system-ui, sans-serif);
+		font-size: 12px;
+		letter-spacing: 0.01em;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+		backdrop-filter: blur(6px);
+		pointer-events: none;
+	}
+
+	.presentation-hint kbd {
+		font-family: var(--font-mono, ui-monospace, 'JetBrains Mono', monospace);
+		font-size: 11px;
+		line-height: 1;
+		padding: 2px 6px;
+		border-radius: 5px;
+		background: rgba(255, 255, 255, 0.14);
+		border: 1px solid rgba(255, 255, 255, 0.22);
 	}
 
 	/* PaneResizer styling — thin draggable bars */
