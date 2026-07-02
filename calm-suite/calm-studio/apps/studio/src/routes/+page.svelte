@@ -82,6 +82,7 @@
 	import { decoratorSidecarNameFor } from '$lib/io/sidecar';
 	import { liftEmbeddedDecorators } from '$lib/io/decoratorMigration';
 	import { readDocumentName } from '$lib/io/documentName';
+	import { toCalmFileName } from '$lib/io/fileName';
 	import { readLayout, type DiagramLayout } from '$lib/io/diagramLayout';
 	import type { CalmArchitecture, CalmRelationship, CalmDecorator } from '@calmstudio/calm-core';
 	import { GEMARA_ARCHITECTURE_SCOPE } from '@calmstudio/calm-core';
@@ -1063,7 +1064,7 @@
 		const response = await fetch(demo.path);
 		const content = await response.text();
 		await importCalmFile(content, demo.name);
-		markClean(demo.name + '.calm.json', null);
+		markClean(toCalmFileName(demo.name), null);
 	}
 
 	/** Current canvas arrangement as a node-id → {x,y} map, persisted on save. */
@@ -1124,9 +1125,13 @@
 	async function handleSave() {
 		try {
 			const modelJson = getModelJson();
-			const json = finalizeCalmForWrite(modelJson, getFileName(), layoutFromCanvas());
-			const handle = await saveFile(json, getFileHandle(), getFileName() ?? 'architecture.calm.json');
-			const savedName = nameFromSaveResult(handle) ?? getFileName() ?? 'architecture.calm.json';
+			// Canonical snake_case `.calm.json` name. When a real file handle exists,
+			// saveFile writes to it and ignores this suggestion, so opened files are
+			// never silently renamed — normalization applies to first/browser saves.
+			const fileName = toCalmFileName(getFileName());
+			const json = finalizeCalmForWrite(modelJson, fileName, layoutFromCanvas());
+			const handle = await saveFile(json, getFileHandle(), fileName);
+			const savedName = nameFromSaveResult(handle) ?? fileName;
 			await persistDecoratorSidecar(modelJson, handle, savedName);
 			markClean(savedName, handle);
 			registerActiveDocument();
@@ -1138,10 +1143,13 @@
 	async function handleSaveAs() {
 		try {
 			const modelJson = getModelJson();
-			const json = finalizeCalmForWrite(modelJson, getFileName(), layoutFromCanvas());
-			const handle = await saveFileAs(json, getFileName() ?? 'architecture.calm.json');
+			// Suggest a canonical snake_case `.calm.json` name in the Save As dialog;
+			// the user can still override it.
+			const fileName = toCalmFileName(getFileName());
+			const json = finalizeCalmForWrite(modelJson, fileName, layoutFromCanvas());
+			const handle = await saveFileAs(json, fileName);
 			// saveFileAs returns a Tauri path, a browser FSA handle, or null (Blob/cancel).
-			const savedName = nameFromSaveResult(handle) ?? getFileName() ?? 'architecture.calm.json';
+			const savedName = nameFromSaveResult(handle) ?? fileName;
 			await persistDecoratorSidecar(modelJson, handle, savedName);
 			if (handle === null) {
 				markClean(); // Blob download — content "saved", no bound file
@@ -1264,14 +1272,15 @@
 	// ─── Export operations ────────────────────────────────────────────────────
 
 	function handleExportCalm() {
-		exportAsCalm(getModelJson());
+		exportAsCalm(getModelJson(), toCalmFileName(getFileName()));
 	}
 
 	/** Bundle the design (architecture + decorator/pack sidecars) into one .zip. */
 	function handleExportZip() {
-		// Use a bare basename for the in-archive filename — a renamed doc title can
-		// contain slashes, which are invalid as ZIP entry names.
-		const archName = (getFileName() ?? 'architecture.calm.json').split(/[\\/]/).pop() ?? 'architecture.calm.json';
+		// toCalmFileName strips any path and yields a slash-free snake_case name,
+		// safe as a ZIP entry name. The display name is still passed through for
+		// the in-archive metadata.
+		const archName = toCalmFileName(getFileName());
 		exportDesignAsZip(getModelJson(), archName, getFileName(), layoutFromCanvas());
 	}
 
