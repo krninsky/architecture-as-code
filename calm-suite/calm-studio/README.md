@@ -62,15 +62,24 @@ Architecture diagrams are everywhere — but they rot. They're images no tool ca
 
 ### Development
 
+CalmStudio now lives inside the `architecture-as-code` monorepo at `calm-suite/calm-studio`, and `packages/calm-core` depends on `@finos/calm-models` from the monorepo root (`file:../../../../calm-models`). That package must be built first, or `calm-core`'s build fails with `Cannot find module '@finos/calm-models/types'`.
+
 ```bash
 git clone https://github.com/finos/architecture-as-code.git
 cd architecture-as-code
-npm ci
+
+# 1. Build the monorepo-root dependency calm-core relies on
+npm install
+npm run build --workspace calm-models
+
+# 2. Install and build CalmStudio itself
+cd calm-suite/calm-studio
+npm install   # use `npm ci` once a package-lock.json exists here
 npm run build --workspace=@calmstudio/calm-core
 npm run build --workspace=@calmstudio/extensions
 ```
 
-Run the studio:
+Run the studio (from `calm-suite/calm-studio`):
 
 ```bash
 npm run dev --workspace=@calmstudio/studio
