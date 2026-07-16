@@ -49,3 +49,4 @@ coverage/
 /cli/test/template-bundles/
 .github/chatmodes
 shared/test-output/
+calm-suite/calm-studio/architecture-as-code.code-workspace
