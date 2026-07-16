@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+	import { tick } from 'svelte';
 	import NodePalette from '$lib/palette/NodePalette.svelte';
 	import FileExplorerPanel from '$lib/explorer/FileExplorerPanel.svelte';
 
@@ -29,10 +30,25 @@
 	}
 
 	let activeTab = $state<LeftPanelTab>(loadInitialTab());
+	let fileExplorer = $state<FileExplorerPanel | undefined>(undefined);
 
 	function setTab(tab: LeftPanelTab) {
 		activeTab = tab;
 		sessionStorage.setItem(TAB_STORAGE_KEY, tab);
+	}
+
+	/** R19 #18 — switch to Files if needed, then reveal active file. */
+	export async function revealActiveFile(relativePath?: string | null): Promise<boolean> {
+		if (activeTab !== 'files') {
+			setTab('files');
+			await tick();
+		}
+		return (await fileExplorer?.reveal(relativePath ?? currentFileRelativePath)) ?? false;
+	}
+
+	/** R20 — refresh node list for a saved project file. */
+	export async function refreshSavedFile(relativePath: string): Promise<void> {
+		await fileExplorer?.refreshFileNodes(relativePath);
 	}
 </script>
 
@@ -61,11 +77,17 @@
 	</div>
 
 	<div class="panel-body" role="tabpanel">
-		{#if activeTab === 'palette'}
+		<!-- Keep both mounted so explorer tree/reveal state survives Palette tab -->
+		<div class="panel-slot" class:hidden={activeTab !== 'palette'}>
 			<NodePalette {onplacenode} />
-		{:else}
-			<FileExplorerPanel {currentFileRelativePath} onopenfile={onopenexplorerfile} />
-		{/if}
+		</div>
+		<div class="panel-slot" class:hidden={activeTab !== 'files'}>
+			<FileExplorerPanel
+				bind:this={fileExplorer}
+				{currentFileRelativePath}
+				onopenfile={onopenexplorerfile}
+			/>
+		</div>
 	</div>
 </div>
 
@@ -113,5 +135,20 @@
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
+		position: relative;
+	}
+
+	.panel-slot {
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
+		width: 100%;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.panel-slot.hidden {
+		display: none;
 	}
 </style>

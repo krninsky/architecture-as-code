@@ -84,4 +84,67 @@ describe('layoutCalm', () => {
 		expect(result).toBeInstanceOf(Map);
 		expect(result.size).toBe(0);
 	});
+
+	it('with long labels and size hints produces no sibling overlap', async () => {
+		const arch: CalmArchitecture = {
+			nodes: [
+				{
+					'unique-id': 'long-a',
+					'node-type': 'service',
+					name: 'Very Long Application Service Name Alpha',
+					description: '',
+				},
+				{
+					'unique-id': 'long-b',
+					'node-type': 'service',
+					name: 'Very Long Application Service Name Beta',
+					description: '',
+				},
+				{
+					'unique-id': 'long-c',
+					'node-type': 'service',
+					name: 'Very Long Application Service Name Gamma',
+					description: '',
+				},
+			],
+			relationships: [
+				{
+					'unique-id': 'r1',
+					'relationship-type': {
+						connects: { source: { node: 'long-a' }, destination: { node: 'long-b' } },
+					},
+				},
+				{
+					'unique-id': 'r2',
+					'relationship-type': {
+						connects: { source: { node: 'long-b' }, destination: { node: 'long-c' } },
+					},
+				},
+			],
+		};
+		const hints = new Map([
+			['long-a', { width: 320, height: 50 }],
+			['long-b', { width: 320, height: 50 }],
+			['long-c', { width: 320, height: 50 }],
+		]);
+		const result = await layoutCalm(arch, new Set(), 'DOWN', hints);
+		const ids = ['long-a', 'long-b', 'long-c'];
+		const gap = 28;
+		for (let i = 0; i < ids.length; i++) {
+			for (let j = i + 1; j < ids.length; j++) {
+				const a = result.get(ids[i])!;
+				const b = result.get(ids[j])!;
+				const aw = a.width ?? 320;
+				const ah = a.height ?? 50;
+				const bw = b.width ?? 320;
+				const bh = b.height ?? 50;
+				const pad = gap / 2;
+				const overlapX =
+					Math.min(a.x + aw + pad, b.x + bw + pad) - Math.max(a.x - pad, b.x - pad);
+				const overlapY =
+					Math.min(a.y + ah + pad, b.y + bh + pad) - Math.max(a.y - pad, b.y - pad);
+				expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+			}
+		}
+	});
 });

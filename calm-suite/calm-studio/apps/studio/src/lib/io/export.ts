@@ -6,36 +6,33 @@
  * export.ts — Export functions for all supported formats.
  *
  * - exportAsCalm: Downloads the current CALM JSON model.
- * - exportAsSvg: Captures the canvas viewport as SVG via html-to-image.
- * - exportAsPng: Captures the canvas viewport as PNG (2x Retina).
+ * - exportAsSvg: Captures the **entire** diagram as SVG via html-to-image.
+ * - exportAsPng: Captures the **entire** diagram as PNG (2x Retina).
  * - exportAsCalmscript: Stub — downloads calmscript content (Phase 5 will fully implement DSL).
  * - exportAsScalerToml: Downloads a Scaler.toml config for OpenGRIS architectures.
  * - downloadDataUrl: Low-level helper for data URL downloads.
  *
  * SVG/PNG export requires a real browser (jsdom cannot render computed styles).
  * All functions are async-safe; null-guard on viewport element per RESEARCH Pitfall 3.
+ *
+ * Image capture always fits **all nodes** (not just the on-screen viewport):
+ * canvas size is derived from node bounds; minZoom is not clamped to 0.5.
  */
 
 import { toSvg, toPng } from 'html-to-image';
-import { getNodesBounds, getViewportForBounds } from '@xyflow/svelte';
 import type { Edge, Node } from '@xyflow/svelte';
 import { downloadDataUrl } from '$lib/io/fileSystem';
 import { inlineFlowEdgeStylesForExport } from '$lib/io/exportImagePrep';
+import {
+	computeExportImageLayout,
+	computeNodesBounds,
+} from '$lib/io/exportImageLayout';
 import { detectPacksFromArch, buildSidecarData, sidecarNameFor } from '$lib/io/sidecar';
 import type { CalmArchitecture, CalmDecorator, CalmControls } from '@calmstudio/calm-core';
 import { isAINode, getAIGFForNodeType } from '@calmstudio/calm-core';
 import { buildScalerToml } from '$lib/io/scalerToml';
 
-const IMAGE_WIDTH = 1920;
-const IMAGE_HEIGHT = 1080;
-
-const IMAGE_CAPTURE_OPTIONS = {
-	backgroundColor: 'transparent' as const,
-	width: IMAGE_WIDTH,
-	height: IMAGE_HEIGHT,
-};
-
-async function captureViewportImage(
+async function captureFullDiagramImage(
 	viewportEl: HTMLElement,
 	nodes: Node[],
 	format: 'svg' | 'png'
@@ -44,21 +41,30 @@ async function captureViewportImage(
 		throw new Error('[CalmStudio] Image export failed: no nodes on canvas');
 	}
 
-	const bounds = getNodesBounds(nodes);
-	const viewport = getViewportForBounds(bounds, IMAGE_WIDTH, IMAGE_HEIGHT, 0.5, 2, 0.1);
+	const bounds = computeNodesBounds(nodes);
+	if (bounds.width <= 0 || bounds.height <= 0) {
+		throw new Error('[CalmStudio] Image export failed: node bounds are empty');
+	}
+
+	const layout = computeExportImageLayout(bounds);
 	const restoreStyles = inlineFlowEdgeStylesForExport(viewportEl);
 
-	const style = {
-		width: `${IMAGE_WIDTH}px`,
-		height: `${IMAGE_HEIGHT}px`,
-		transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+	const captureOptions = {
+		backgroundColor: 'transparent' as const,
+		width: layout.width,
+		height: layout.height,
+		style: {
+			width: `${layout.width}px`,
+			height: `${layout.height}px`,
+			transform: layout.transform,
+		},
 	};
 
 	try {
 		if (format === 'svg') {
-			return await toSvg(viewportEl, { ...IMAGE_CAPTURE_OPTIONS, style });
+			return await toSvg(viewportEl, captureOptions);
 		}
-		return await toPng(viewportEl, { ...IMAGE_CAPTURE_OPTIONS, style, pixelRatio: 2 });
+		return await toPng(viewportEl, { ...captureOptions, pixelRatio: 2 });
 	} finally {
 		restoreStyles();
 	}
@@ -176,10 +182,10 @@ export function exportAsCalm(json: string, filename = 'architecture.calm.json'):
 /**
  * Export the canvas as an SVG file with transparent background.
  *
- * Captures the `.svelte-flow__viewport` element via html-to-image.
- * Requires a real browser — jsdom cannot render canvas styles.
+ * Captures the entire diagram (all nodes), not only the currently visible
+ * viewport. Requires a real browser — jsdom cannot render canvas styles.
  *
- * @param nodes  Current Svelte Flow nodes (used to compute viewport bounds)
+ * @param nodes  Current Svelte Flow nodes (used to compute full diagram bounds)
  */
 export async function exportAsSvg(nodes: Node[], _edges?: Edge[]): Promise<void> {
 	const viewportEl = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
@@ -188,7 +194,7 @@ export async function exportAsSvg(nodes: Node[], _edges?: Edge[]): Promise<void>
 		return;
 	}
 
-	const dataUrl = await captureViewportImage(viewportEl, nodes, 'svg');
+	const dataUrl = await captureFullDiagramImage(viewportEl, nodes, 'svg');
 	downloadDataUrl(dataUrl, 'architecture.svg');
 }
 
@@ -197,10 +203,10 @@ export async function exportAsSvg(nodes: Node[], _edges?: Edge[]): Promise<void>
 /**
  * Export the canvas as a PNG file at 2x resolution (Retina).
  *
- * Captures the `.svelte-flow__viewport` element via html-to-image.
- * Requires a real browser — jsdom cannot render canvas styles.
+ * Captures the entire diagram (all nodes), not only the currently visible
+ * viewport. Requires a real browser — jsdom cannot render canvas styles.
  *
- * @param nodes  Current Svelte Flow nodes (used to compute viewport bounds)
+ * @param nodes  Current Svelte Flow nodes (used to compute full diagram bounds)
  */
 export async function exportAsPng(nodes: Node[], _edges?: Edge[]): Promise<void> {
 	const viewportEl = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
@@ -209,7 +215,7 @@ export async function exportAsPng(nodes: Node[], _edges?: Edge[]): Promise<void>
 		return;
 	}
 
-	const dataUrl = await captureViewportImage(viewportEl, nodes, 'png');
+	const dataUrl = await captureFullDiagramImage(viewportEl, nodes, 'png');
 	downloadDataUrl(dataUrl, 'architecture.png');
 }
 

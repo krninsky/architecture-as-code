@@ -50,6 +50,7 @@
 	import { applyContainmentFromEdges } from '$lib/canvas/containment';
 	import { pushSnapshot, resetHistory, undo, redo, exportHistoryState, loadHistoryState, createEmptyHistoryState } from '$lib/stores/history.svelte';
 	import { layoutCalm, type LayoutDirection } from '$lib/layout/elkLayout';
+	import { buildLayoutSizeHints } from '$lib/layout/layoutSizeHints';
 	import { openFile, saveFile, saveFileAs } from '$lib/io/fileSystem';
 	import {
 		getFileName,
@@ -126,6 +127,8 @@
 	let outsideProjectHref = $state<string | null>(null);
 
 	let canvas: CalmCanvas;
+	let leftSidebar: LeftSidebar | undefined = $state();
+	let referenceFocusWarning = $state<string | null>(null);
 
 	// ─── Desktop: native title bar sync ───────────────────────────────────────
 
@@ -321,7 +324,12 @@
 
 		if (subArch.nodes.length === 0) return;
 
-		const positions = await layoutCalm(subArch, new Set(), layoutDirection);
+		const positions = await layoutCalm(
+			subArch,
+			new Set(),
+			layoutDirection,
+			buildLayoutSizeHints(subArch, nodes)
+		);
 		c4PositionOverrides = positions;
 
 		await tick();
@@ -655,6 +663,9 @@
 		const href = details?.['detailed-architecture'];
 		if (!href) return;
 
+		// R22 — focus this unique-id in the target diagram after open
+		const focusUniqueId = (node.data?.calmId as string) ?? calmId;
+
 		const resolved = resolveDetailedArchitecture(getFileRelativePath(), href);
 		if (resolved.kind === 'external') {
 			outsideProjectHref = resolved.url;
@@ -671,7 +682,24 @@
 			return;
 		}
 		const content = await readFileContent(file);
-		await openCalmFileAfterConfirm(content, file.name, file.handle, file.relativePath);
+		const opened = await openCalmFileAfterConfirm(content, file.name, file.handle, file.relativePath);
+		if (!opened) return;
+
+		await tick();
+		const target = nodes.find(
+			(n) => (n.data?.calmId as string) === focusUniqueId || n.id === focusUniqueId
+		);
+		if (target) {
+			selectedNodeId = focusUniqueId;
+			selectedEdgeId = null;
+			canvas?.navigateToNode(focusUniqueId);
+			referenceFocusWarning = null;
+		} else {
+			referenceFocusWarning = `Referenced node "${focusUniqueId}" was not found in the target diagram.`;
+			setTimeout(() => {
+				if (referenceFocusWarning?.includes(focusUniqueId)) referenceFocusWarning = null;
+			}, 4000);
+		}
 	}
 
 	function handleSwapSelectedEdge(): void {
@@ -1023,7 +1051,8 @@
 		applyFromJson(parsed);
 
 		// Auto-layout with no pinned nodes on fresh import
-		const positionMap = await layoutCalm(parsed, new Set(), 'DOWN');
+		const importHints = buildLayoutSizeHints(parsed);
+		const positionMap = await layoutCalm(parsed, new Set(), 'DOWN', importHints);
 
 		await flushCanvasBeforeReplace();
 		applyArchitectureToCanvas(parsed, positionMap);
@@ -1078,12 +1107,19 @@
 		await openCalmFileAfterConfirm(content, demo.name + '.calm.json', null, null);
 	}
 
+	async function refreshExplorerAfterSave(): Promise<void> {
+		const relativePath = getFileRelativePath();
+		if (!relativePath) return;
+		await leftSidebar?.refreshSavedFile(relativePath);
+	}
+
 	async function handleSave() {
 		try {
 			const json = getExportJson(nodes, edges);
 			syncCanvasToModel();
 			const handle = await saveFile(json, getFileHandle(), getFileName() ?? 'architecture.calm.json');
 			markDocumentClean(undefined, handle);
+			await refreshExplorerAfterSave();
 		} catch (e) {
 			// User cancelled or save failed — remain dirty
 		}
@@ -1109,6 +1145,7 @@
 				// Blob download — we can mark clean since content was "saved" (downloaded)
 				markDocumentClean();
 			}
+			await refreshExplorerAfterSave();
 		} catch (e) {
 			// User cancelled or save failed — remain dirty
 		}
@@ -1345,20 +1382,31 @@
 			nodes.filter((n) => n.data?.pinned).map((n) => n.id)
 		);
 
+		// Size hints must match rendered label chrome — otherwise ELK packs too tight
+		const sizeHints = buildLayoutSizeHints(model, nodes);
+
 		// Run ELK for free (unpinned) nodes
-		const elkPositions = await layoutCalm(model, pinnedIds, direction);
+		const elkPositions = await layoutCalm(model, pinnedIds, direction, sizeHints);
 
 		// Build final position map: ELK results + pinned node current positions
-		const finalPositions = new Map<string, { x: number; y: number }>();
+		const finalPositions = new Map<
+			string,
+			{ x: number; y: number; width?: number; height?: number }
+		>();
 
 		// Inject pinned positions from current canvas state
 		for (const n of nodes) {
 			if (pinnedIds.has(n.id)) {
-				finalPositions.set(n.id, { ...n.position });
+				const hint = sizeHints.get(n.id);
+				finalPositions.set(n.id, {
+					...n.position,
+					width: hint?.width ?? n.measured?.width ?? n.width,
+					height: hint?.height ?? n.measured?.height ?? n.height,
+				});
 			}
 		}
 
-		// Add ELK-computed positions for free nodes
+		// Add ELK-computed positions for free nodes (include width/height for projection)
 		for (const [id, pos] of elkPositions) {
 			finalPositions.set(id, pos);
 		}
@@ -1524,6 +1572,22 @@
 				</button>
 			</div>
 		{/if}
+		{#if referenceFocusWarning}
+			<div class="error-banner" role="status">
+				<span class="error-message">{referenceFocusWarning}</span>
+				<button
+					type="button"
+					class="error-dismiss"
+					onclick={() => (referenceFocusWarning = null)}
+					aria-label="Dismiss warning"
+				>
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+						<line x1="18" y1="6" x2="6" y2="18" />
+						<line x1="6" y1="6" x2="18" y2="18" />
+					</svg>
+				</button>
+			</div>
+		{/if}
 
 		<!-- Extension pack info banner: shown when pack-prefixed node types are detected on import -->
 		{#if extensionPackBanner}
@@ -1552,6 +1616,7 @@
 					{#if !isC4Mode()}
 						<Pane defaultSize={15} minSize={8}>
 							<LeftSidebar
+								bind:this={leftSidebar}
 								onplacenode={handlePalettePlace}
 								currentFileRelativePath={getFileRelativePath()}
 								onopenexplorerfile={handleOpenExplorerFile}

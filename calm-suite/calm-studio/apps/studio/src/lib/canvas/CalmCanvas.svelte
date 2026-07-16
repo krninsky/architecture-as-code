@@ -52,6 +52,13 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 	import { relativePathBetween } from '$lib/explorer/relativePath';
 	import { CALM_NODE_REF_MIME, type CalmNodeRefDragPayload } from '$lib/explorer/types';
 	import { getFileRelativePath } from '$lib/io/fileState.svelte';
+	import DuplicateNodeDialog, {
+		type DuplicateNodeResult,
+	} from './DuplicateNodeDialog.svelte';
+	import {
+		CANVAS_NODES_CONTEXT,
+		type CanvasNodesGetter,
+	} from './edgeRouting/routedEdgePath';
 
 	import '@xyflow/svelte/dist/style.css';
 
@@ -195,6 +202,8 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 	setContext('referenceNavigation', {
 		onNavigateReference: (calmId: string) => onnavigatereference?.(calmId),
 	});
+
+	setContext(CANVAS_NODES_CONTEXT, (() => nodes) satisfies CanvasNodesGetter);
 
 	/**
 	 * Notify parent of canvas changes. Guards against readonly mode to prevent
@@ -554,6 +563,17 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 
 	let lastNodeClick: { id: string; time: number } | null = null;
 
+	/** R21 — Ctrl/Cmd+drag duplicate state */
+	let duplicateDragOrigin: {
+		nodeId: string;
+		position: { x: number; y: number };
+		parentId?: string;
+	} | null = null;
+	let pendingDuplicate: {
+		source: Node;
+		dropPosition: { x: number; y: number };
+	} | null = $state(null);
+
 	function handleNodeClick({ node }: { node: Node; event: MouseEvent | TouchEvent }) {
 		if (!readonly || !ondblclicknode) return;
 		const now = Date.now();
@@ -565,17 +585,94 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 		}
 	}
 
-	function handleNodeDragStop({
+	function handleNodeDragStart({
 		targetNode,
+		event,
 	}: {
 		targetNode: Node | null;
 		nodes: Node[];
 		event: MouseEvent | TouchEvent;
 	}) {
+		if (readonly || !targetNode) {
+			duplicateDragOrigin = null;
+			return;
+		}
+		const ev = event as MouseEvent;
+		if (ev.ctrlKey || ev.metaKey) {
+			duplicateDragOrigin = {
+				nodeId: targetNode.id,
+				position: { ...targetNode.position },
+				parentId: targetNode.parentId,
+			};
+			document.body.style.cursor = 'copy';
+		} else {
+			duplicateDragOrigin = null;
+		}
+	}
+
+	function findContainmentParent(
+		dropPos: { x: number; y: number },
+		excludeId: string
+	): string | null {
+		for (const candidate of nodes) {
+			if (candidate.id === excludeId) continue;
+			if (
+				candidate.type === 'container' ||
+				(candidate.measured?.width && candidate.measured.width > 100)
+			) {
+				const bounds = {
+					x: candidate.position.x,
+					y: candidate.position.y,
+					width: candidate.measured?.width ?? candidate.width ?? 200,
+					height: candidate.measured?.height ?? candidate.height ?? 150,
+				};
+				if (isInsideBounds(dropPos, bounds)) {
+					return candidate.id;
+				}
+			}
+		}
+		return null;
+	}
+
+	function handleNodeDragStop({
+		targetNode,
+		event,
+	}: {
+		targetNode: Node | null;
+		nodes: Node[];
+		event: MouseEvent | TouchEvent;
+	}) {
+		document.body.style.cursor = '';
 		if (readonly) return;
 
 		const draggedNode = targetNode;
 		if (!draggedNode) return;
+
+		// R21 — Ctrl/Cmd+drag → restore original, open duplicate modal
+		if (duplicateDragOrigin && duplicateDragOrigin.nodeId === draggedNode.id) {
+			const origin = duplicateDragOrigin;
+			const dropPosition = { ...draggedNode.position };
+			const sourceSnapshot = JSON.parse(
+				JSON.stringify(nodes.find((n) => n.id === origin.nodeId) ?? draggedNode)
+			) as Node;
+			// Restore original node to pre-drag position
+			nodes = nodes.map((n) =>
+				n.id === origin.nodeId
+					? {
+							...n,
+							position: origin.position,
+							parentId: origin.parentId,
+							selected: false,
+						}
+					: n
+			);
+			duplicateDragOrigin = null;
+			sourceSnapshot.position = origin.position;
+			sourceSnapshot.parentId = origin.parentId;
+			pendingDuplicate = { source: sourceSnapshot, dropPosition };
+			return;
+		}
+		duplicateDragOrigin = null;
 
 		// Svelte Flow may set parentId during drag without creating a CALM edge.
 		// Ensure a composed-of edge exists and sync the canonical model.
@@ -616,6 +713,70 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 		// Regular drag stop (position change only)
 		applyFromCanvas(nodes, edges);
 		notifyChange();
+	}
+
+	function cancelDuplicate() {
+		pendingDuplicate = null;
+	}
+
+	function confirmDuplicate(result: DuplicateNodeResult) {
+		if (!pendingDuplicate) return;
+		const { source, dropPosition } = pendingDuplicate;
+		pendingDuplicate = null;
+
+		const oldId = (source.data?.calmId as string) ?? source.id;
+		const newId = nanoid();
+		pushSnapshot(nodes, edges);
+
+		const clone: Node = {
+			...JSON.parse(JSON.stringify(source)),
+			id: newId,
+			position: { ...dropPosition },
+			selected: true,
+			parentId: undefined,
+			data: {
+				...JSON.parse(JSON.stringify(source.data ?? {})),
+				calmId: newId,
+				label: result.name,
+			},
+		};
+		applyRectangleLayoutSize(clone, result.name, !!(source.data as Record<string, unknown>)?.isReference);
+
+		let nextNodes: Node[] = nodes.map((n) => ({ ...n, selected: false }));
+		nextNodes = [...nextNodes, clone];
+		let nextEdges: Edge[] = edges;
+
+		if (result.duplicateRelationships) {
+			const clonedEdges = edges
+				.filter((e) => e.source === oldId || e.target === oldId || e.source === source.id || e.target === source.id)
+				.map((e) => {
+					const edgeClone = JSON.parse(JSON.stringify(e)) as Edge;
+					edgeClone.id = nanoid();
+					edgeClone.selected = false;
+					if (edgeClone.source === oldId || edgeClone.source === source.id) edgeClone.source = newId;
+					if (edgeClone.target === oldId || edgeClone.target === source.id) edgeClone.target = newId;
+					if (edgeClone.data) {
+						edgeClone.data = {
+							...edgeClone.data,
+							calmRelId: nanoid(),
+						};
+					}
+					return edgeClone;
+				});
+			nextEdges = [...edges, ...clonedEdges];
+		}
+
+		const parentId = findContainmentParent(dropPosition, newId);
+		if (parentId) {
+			nextNodes = makeContainment(parentId, newId, nextNodes);
+			nextEdges = ensureContainmentEdge(parentId, newId, nextEdges);
+		}
+
+		nodes = nextNodes;
+		edges = nextEdges;
+		applyFromCanvas(nodes, edges);
+		notifyChange();
+		onselectionchange?.(newId, null);
 	}
 
 	// ─── Keyboard shortcuts ───────────────────────────────────────────────────
@@ -730,6 +891,7 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 		panOnDrag={true}
 		panOnScroll={false}
 		onconnect={handleConnect}
+		onnodedragstart={handleNodeDragStart}
 		onnodedragstop={handleNodeDragStop}
 		ondelete={handleDelete}
 		onedgecontextmenu={handleEdgeContextMenu}
@@ -773,6 +935,14 @@ import { makeContainment, isContainmentType, ensureContainmentEdge } from './con
 		</div>
 	{/if}
 </div>
+
+{#if pendingDuplicate}
+	<DuplicateNodeDialog
+		defaultName={`${(pendingDuplicate.source.data?.label as string) || 'Node'} (copy)`}
+		onconfirm={confirmDuplicate}
+		oncancel={cancelDuplicate}
+	/>
+{/if}
 
 <style>
 	.edge-menu-backdrop {

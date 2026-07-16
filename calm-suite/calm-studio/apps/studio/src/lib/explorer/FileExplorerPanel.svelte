@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { resolvePackNode } from '@calmstudio/extensions';
 	import {
 		ensureReadPermission,
@@ -15,6 +15,7 @@
 		readFileContent,
 		scanDirectoryTree,
 		updateFileInTree,
+		findFileInTree,
 	} from '$lib/explorer/folderScan';
 	import { setExplorerTree } from '$lib/explorer/explorerTree.svelte';
 	import type {
@@ -43,8 +44,14 @@
 	let expandedFiles = $state<Record<string, boolean>>({});
 	let loading = $state(false);
 	let errorMessage = $state<string | null>(null);
+	let revealedPath = $state<string | null>(null);
+	let revealToast = $state<string | null>(null);
 
 	const fsSupported = isDirectoryPickerSupported();
+
+	const canReveal = $derived(
+		!!currentFileRelativePath && tree.length > 0 && !!findFileInTree(tree, currentFileRelativePath)
+	);
 
 	onMount(() => {
 		void restorePersistedFolder();
@@ -150,6 +157,66 @@
 		}
 		return '';
 	}
+
+	function ancestorDirPaths(relativePath: string): string[] {
+		const parts = relativePath.split('/');
+		const dirs: string[] = [];
+		for (let i = 0; i < parts.length - 1; i++) {
+			dirs.push(parts.slice(0, i + 1).join('/'));
+		}
+		return dirs;
+	}
+
+	/** R19 — expand ancestors, scroll to file, highlight. */
+	export async function reveal(relativePath?: string | null): Promise<boolean> {
+		const path = relativePath ?? currentFileRelativePath;
+		if (!path) {
+			revealToast = 'Current file is not in the open project folder.';
+			setTimeout(() => {
+				if (revealToast?.startsWith('Current file')) revealToast = null;
+			}, 3000);
+			return false;
+		}
+		if (!findFileInTree(tree, path)) {
+			revealToast = 'Current file is not in the open project folder.';
+			setTimeout(() => {
+				if (revealToast?.startsWith('Current file')) revealToast = null;
+			}, 3000);
+			return false;
+		}
+
+		const dirs = ancestorDirPaths(path);
+		const nextExpanded = { ...expandedDirs };
+		for (const dir of dirs) {
+			nextExpanded[dir] = true;
+		}
+		expandedDirs = nextExpanded;
+		await tick();
+
+		revealedPath = path;
+		await tick();
+		const el = document.querySelector(
+			`.file-explorer [data-relative-path="${CSS.escape(path)}"]`
+		);
+		el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		setTimeout(() => {
+			if (revealedPath === path) revealedPath = null;
+		}, 2000);
+		return true;
+	}
+
+	/** R20 — refresh node preview for a saved file without full tree rescan. */
+	export async function refreshFileNodes(relativePath: string): Promise<void> {
+		const file = findFileInTree(tree, relativePath);
+		if (!file) return;
+		const loaded = await loadCalmNodesForFile({ ...file, nodesLoaded: false });
+		tree = updateFileInTree(tree, relativePath, loaded);
+		setExplorerTree(tree);
+	}
+
+	export function hasFile(relativePath: string | null | undefined): boolean {
+		return !!relativePath && !!findFileInTree(tree, relativePath);
+	}
 </script>
 
 <div class="file-explorer">
@@ -157,7 +224,23 @@
 		<button type="button" class="open-folder-btn" onclick={handleOpenFolder} disabled={!fsSupported}>
 			Open folder…
 		</button>
+		<button
+			type="button"
+			class="reveal-btn"
+			onclick={() => void reveal()}
+			disabled={!canReveal}
+			title={canReveal
+				? 'Reveal active file in tree'
+				: 'Current file is not in the open project folder'}
+			aria-label="Reveal active file in tree"
+		>
+			⌖
+		</button>
 	</div>
+
+	{#if revealToast}
+		<p class="hint toast" role="status">{revealToast}</p>
+	{/if}
 
 	{#if errorMessage}
 		<p class="error" role="alert">{errorMessage}</p>
@@ -204,6 +287,8 @@
 				<div
 					class="tree-row file"
 					class:current={isCurrentFile(entry.relativePath)}
+					class:revealed={revealedPath === entry.relativePath}
+					data-relative-path={entry.relativePath}
 					role="treeitem"
 				>
 					<button
@@ -274,13 +359,15 @@
 	}
 
 	.header {
+		display: flex;
+		gap: 6px;
 		padding: 8px;
 		border-bottom: 1px solid var(--color-border);
 		flex-shrink: 0;
 	}
 
 	.open-folder-btn {
-		width: 100%;
+		flex: 1;
 		padding: 6px 10px;
 		font-size: 12px;
 		border: 1px solid var(--color-border);
@@ -294,11 +381,39 @@
 		cursor: not-allowed;
 	}
 
+	.reveal-btn {
+		flex-shrink: 0;
+		width: 32px;
+		padding: 6px 0;
+		font-size: 14px;
+		line-height: 1;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-surface);
+		cursor: pointer;
+		color: var(--color-text-secondary);
+	}
+
+	.reveal-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.reveal-btn:not(:disabled):hover {
+		background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.05));
+		color: var(--color-text-primary);
+	}
+
 	.hint,
 	.error {
 		padding: 10px;
 		font-size: 11px;
 		color: var(--color-text-secondary);
+	}
+
+	.hint.toast {
+		padding: 6px 10px;
+		background: rgba(59, 130, 246, 0.08);
 	}
 
 	.error {
@@ -373,6 +488,21 @@
 
 	.tree-row.file.current .file-open-btn {
 		font-weight: 600;
+	}
+
+	.tree-row.file.revealed {
+		animation: reveal-pulse 1.2s ease-out;
+		outline: 2px solid rgba(59, 130, 246, 0.55);
+		outline-offset: 1px;
+	}
+
+	@keyframes reveal-pulse {
+		0% {
+			background: rgba(59, 130, 246, 0.35);
+		}
+		100% {
+			background: rgba(59, 130, 246, 0.12);
+		}
 	}
 
 	.tree-row.node {
