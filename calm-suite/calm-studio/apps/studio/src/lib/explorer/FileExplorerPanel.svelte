@@ -6,6 +6,7 @@
 	import { resolvePackNode } from '@calmstudio/extensions';
 	import {
 		ensureReadPermission,
+		ensureReadWritePermission,
 		isDirectoryPickerSupported,
 		loadRootDirectoryHandle,
 		saveRootDirectoryHandle,
@@ -25,6 +26,14 @@
 		ExplorerTreeEntry,
 	} from '$lib/explorer/types';
 	import { CALM_NODE_REF_MIME } from '$lib/explorer/types';
+	import {
+		createProjectFile,
+		getProjectLoadError,
+		loadProjectFromRoot,
+		projectNeedsCreate,
+	} from '$lib/project/projectStore.svelte';
+	import CreateProjectDialog from '$lib/project/CreateProjectDialog.svelte';
+	import ProjectSettingsDialog from '$lib/project/ProjectSettingsDialog.svelte';
 
 	interface Props {
 		currentFileRelativePath?: string | null;
@@ -34,9 +43,11 @@
 			relativePath: string,
 			handle: FileSystemFileHandle
 		) => void;
+		/** Notify parent that project root/config changed (R24). */
+		onprojectchange?: () => void;
 	}
 
-	let { currentFileRelativePath = null, onopenfile }: Props = $props();
+	let { currentFileRelativePath = null, onopenfile, onprojectchange }: Props = $props();
 
 	let rootHandle = $state<FileSystemDirectoryHandle | null>(null);
 	let tree = $state<ExplorerTreeEntry[]>([]);
@@ -46,6 +57,8 @@
 	let errorMessage = $state<string | null>(null);
 	let revealedPath = $state<string | null>(null);
 	let revealToast = $state<string | null>(null);
+	let showCreateProject = $state(false);
+	let showProjectSettings = $state(false);
 
 	const fsSupported = isDirectoryPickerSupported();
 
@@ -81,6 +94,13 @@
 			tree = await scanDirectoryTree(handle);
 			setExplorerTree(tree);
 			await saveRootDirectoryHandle(handle);
+			const status = await loadProjectFromRoot(handle);
+			if (status === 'multiple' || status === 'invalid') {
+				errorMessage = getProjectLoadError();
+			} else if (status === 'missing') {
+				showCreateProject = true;
+			}
+			onprojectchange?.();
 		} catch (e) {
 			errorMessage = (e as Error).message;
 		} finally {
@@ -94,13 +114,38 @@
 			return;
 		}
 		try {
-			const handle = await window.showDirectoryPicker({ mode: 'read' });
+			const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+			await ensureReadWritePermission(handle);
 			await loadTree(handle);
 		} catch (e) {
 			if ((e as Error).name !== 'AbortError') {
 				errorMessage = (e as Error).message;
 			}
 		}
+	}
+
+	async function handleCreateProject(result: { name: string; fileName: string }) {
+		if (!rootHandle) return;
+		try {
+			await createProjectFile(rootHandle, result.name, result.fileName);
+			showCreateProject = false;
+			tree = await scanDirectoryTree(rootHandle);
+			setExplorerTree(tree);
+			onprojectchange?.();
+		} catch (e) {
+			errorMessage = (e as Error).message;
+		}
+	}
+
+	/** Full tree rescan after extract creates new files (R27). */
+	export async function rescanTree(): Promise<void> {
+		if (!rootHandle) return;
+		tree = await scanDirectoryTree(rootHandle);
+		setExplorerTree(tree);
+	}
+
+	export function getRootHandle(): FileSystemDirectoryHandle | null {
+		return rootHandle;
 	}
 
 	function toggleDir(path: string) {
@@ -236,10 +281,26 @@
 		>
 			⌖
 		</button>
+		<button
+			type="button"
+			class="settings-btn"
+			onclick={() => (showProjectSettings = true)}
+			disabled={!rootHandle}
+			title="Project settings (.calmrj)"
+			aria-label="Project settings"
+		>
+			⚙
+		</button>
 	</div>
 
 	{#if revealToast}
 		<p class="hint toast" role="status">{revealToast}</p>
+	{/if}
+
+	{#if projectNeedsCreate() && rootHandle && !showCreateProject}
+		<p class="hint">
+			<button type="button" class="linkish" onclick={() => (showCreateProject = true)}>Create project file…</button>
+		</p>
 	{/if}
 
 	{#if errorMessage}
@@ -260,6 +321,19 @@
 		</ul>
 	{/if}
 </div>
+
+{#if showCreateProject && rootHandle}
+	<CreateProjectDialog
+		defaultName={rootHandle.name || 'project'}
+		onconfirm={(r) => void handleCreateProject(r)}
+		oncancel={() => (showCreateProject = false)}
+		onskip={() => (showCreateProject = false)}
+	/>
+{/if}
+
+{#if showProjectSettings}
+	<ProjectSettingsDialog onclose={() => (showProjectSettings = false)} />
+{/if}
 
 {#snippet treeEntry(entry: ExplorerTreeEntry, depth: number)}
 	<li class="tree-item" style="padding-left: {depth * 12}px" role="none">
@@ -402,6 +476,39 @@
 	.reveal-btn:not(:disabled):hover {
 		background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.05));
 		color: var(--color-text-primary);
+	}
+
+	.settings-btn {
+		flex-shrink: 0;
+		width: 32px;
+		padding: 6px 0;
+		font-size: 14px;
+		line-height: 1;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-surface);
+		cursor: pointer;
+		color: var(--color-text-secondary);
+	}
+
+	.settings-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.settings-btn:not(:disabled):hover {
+		background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.05));
+		color: var(--color-text-primary);
+	}
+
+	.linkish {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--color-accent, #2563eb);
+		cursor: pointer;
+		font-size: inherit;
+		text-decoration: underline;
 	}
 
 	.hint,

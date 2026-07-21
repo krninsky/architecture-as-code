@@ -60,3 +60,17 @@ export async function ensureReadPermission(
 	const requested = await handle.requestPermission(opts);
 	return requested === 'granted';
 }
+
+/** Prefer readwrite for project file create / extract (R24 / R27). Falls back to read. */
+export async function ensureReadWritePermission(
+	handle: FileSystemDirectoryHandle
+): Promise<boolean> {
+	const opts = { mode: 'readwrite' as const };
+	const current = await handle.queryPermission(opts);
+	if (current === 'granted') return true;
+	if (current === 'prompt') {
+		const requested = await handle.requestPermission(opts);
+		if (requested === 'granted') return true;
+	}
+	return ensureReadPermission(handle);
+}

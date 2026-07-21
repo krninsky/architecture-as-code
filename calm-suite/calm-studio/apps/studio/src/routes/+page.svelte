@@ -102,6 +102,7 @@
 		setScrollToElementId,
 		clearValidation,
 		runValidation,
+		runValidationAsync,
 	} from '$lib/stores/validation.svelte';
 	import {
 		refreshGovernance,
@@ -116,6 +117,18 @@
 		getFlowTransitionForEdge,
 		isNodeInActiveFlow,
 	} from '$lib/stores/flowState.svelte';
+	import { applyExtractToParent } from '$lib/project/extractSubgraph';
+	import { resolveExtractPath } from '$lib/project/naming';
+	import {
+		ensureWritePermission,
+		projectRelativeFileExists,
+		writeProjectRelativeFile,
+	} from '$lib/project/projectFs';
+	import { getProjectConfig, getProjectRootHandle } from '$lib/project/projectStore.svelte';
+	import { relativePathBetween } from '$lib/explorer/relativePath';
+	import ExtractToDiagramDialog from '$lib/project/ExtractToDiagramDialog.svelte';
+	import { isReferenceNode } from '$lib/metadata/referenceNode';
+	import { asCalmFlowNodeData } from '$lib/canvas/flowTypes';
 
 	let nodes = $state.raw<Node[]>([]);
 	let edges = $state.raw<Edge[]>([]);
@@ -129,6 +142,15 @@
 	let canvas: CalmCanvas;
 	let leftSidebar: LeftSidebar | undefined = $state();
 	let referenceFocusWarning = $state<string | null>(null);
+
+	// ─── Extract to diagram (R27) ─────────────────────────────────────────────
+	let extractDialog = $state<{
+		nodeId: string;
+		folder: string;
+		fileName: string;
+		warning: string | null;
+	} | null>(null);
+	let extractError = $state<string | null>(null);
 
 	// ─── Desktop: native title bar sync ───────────────────────────────────────
 
@@ -225,8 +247,10 @@
 			clearNodeEdgeValidation();
 			return;
 		}
-		runValidation();
-		enrichNodesEdgesWithValidation();
+		void (async () => {
+			await runValidationAsync();
+			enrichNodesEdgesWithValidation();
+		})();
 	}
 
 	/** Strip validation data from nodes/edges so badges and edge colors disappear. */
@@ -974,6 +998,108 @@
 		markDirty();
 	}
 
+	/** R27 — open Extract dialog with naming defaults from .calmrj. */
+	function handleExtractRequest(nodeId: string) {
+		extractError = null;
+		const root = getProjectRootHandle();
+		if (!root) {
+			extractError = 'Open a project folder before extracting to a diagram.';
+			return;
+		}
+		const currentPath = getFileRelativePath();
+		if (!currentPath) {
+			extractError = 'Save the current diagram into the project folder first.';
+			return;
+		}
+		applyFromCanvas(nodes, edges);
+		const model = getModel();
+		const node = model.nodes.find((n) => n['unique-id'] === nodeId);
+		if (!node) return;
+		const flowNode = nodes.find((n) => n.data?.calmId === nodeId);
+		if (flowNode && isReferenceNode(asCalmFlowNodeData(flowNode.data as Record<string, unknown>))) {
+			return;
+		}
+		const naming = resolveExtractPath(
+			String(node['node-type']),
+			{ name: node.name || nodeId },
+			getProjectConfig(),
+			currentPath
+		);
+		extractDialog = {
+			nodeId,
+			folder: naming.folder,
+			fileName: naming.fileName,
+			warning: naming.warning ?? null,
+		};
+	}
+
+	async function handleExtractConfirm(result: { folder: string; fileName: string }) {
+		if (!extractDialog) return;
+		const nodeId = extractDialog.nodeId;
+		extractDialog = null;
+		extractError = null;
+
+		const root = getProjectRootHandle();
+		const currentPath = getFileRelativePath();
+		if (!root || !currentPath) {
+			extractError = 'Project folder or current file path is missing.';
+			return;
+		}
+
+		const ok = await ensureWritePermission(root);
+		if (!ok) {
+			extractError = 'Write permission required to create the extracted diagram.';
+			return;
+		}
+
+		const relativeChild = result.folder
+			? `${result.folder.replace(/\/+$/, '')}/${result.fileName}`
+			: result.fileName;
+
+		if (await projectRelativeFileExists(root, relativeChild)) {
+			const overwrite = confirm(`File already exists:\n${relativeChild}\n\nOverwrite?`);
+			if (!overwrite) return;
+		}
+
+		try {
+			applyFromCanvas(nodes, edges);
+			pushSnapshot(nodes, edges);
+			const model = getModel();
+			const detailedHref = relativePathBetween(currentPath, relativeChild);
+			const { parentArchitecture, childArchitecture } = applyExtractToParent(
+				model,
+				nodeId,
+				detailedHref
+			);
+
+			const childJson = JSON.stringify(childArchitecture, null, 2) + '\n';
+			const childHandle = await writeProjectRelativeFile(root, relativeChild, childJson);
+
+			applyFromJson(parentArchitecture);
+			const positionMap = new Map<string, { x: number; y: number; width?: number; height?: number }>();
+			for (const n of nodes) {
+				if (n.data?.calmId) {
+					positionMap.set(n.data.calmId as string, {
+						...n.position,
+						width: n.measured?.width ?? n.width,
+						height: n.measured?.height ?? n.height,
+					});
+				}
+			}
+			applyArchitectureToCanvas(parentArchitecture, positionMap);
+			markDirty();
+			await leftSidebar?.rescanTree();
+
+			const childName = relativeChild.split('/').pop() ?? result.fileName;
+			// Parent tab already holds the stub (dirty); skip unsaved prompt so Extract can open the child.
+			await openCalmFileAfterConfirm(childJson, childName, childHandle, relativeChild, {
+				skipUnsavedPrompt: true,
+			});
+		} catch (e) {
+			extractError = (e as Error).message;
+		}
+	}
+
 	// ─── CALM file import ─────────────────────────────────────────────────────
 
 	/**
@@ -983,7 +1109,8 @@
 		content: string,
 		name: string,
 		handle: FileSystemFileHandle | string | null = null,
-		relativePath: string | null = null
+		relativePath: string | null = null,
+		options?: { skipUnsavedPrompt?: boolean }
 	): Promise<boolean> {
 		const existing = findTabByFile(diagramTabs, relativePath, handle);
 		if (existing) {
@@ -991,7 +1118,7 @@
 			return true;
 		}
 
-		if (!(await ensureCanProceedWithUnsavedChanges())) {
+		if (!options?.skipUnsavedPrompt && !(await ensureCanProceedWithUnsavedChanges())) {
 			return false;
 		}
 		if (!(await evictOldestTabIfNeeded())) {
@@ -1762,6 +1889,7 @@
 							onswapedge={handleSwapSelectedEdge}
 							ontogglepin={handleTogglePin}
 							onopenreference={handleNavigateReference}
+							onextract={handleExtractRequest}
 							readonly={isC4Mode()}
 						/>
 					</Pane>
@@ -1825,6 +1953,23 @@
 			/>
 		{/if}
 
+		{#if extractDialog}
+			<ExtractToDiagramDialog
+				defaultFolder={extractDialog.folder}
+				defaultFileName={extractDialog.fileName}
+				warning={extractDialog.warning}
+				onconfirm={(r) => void handleExtractConfirm(r)}
+				oncancel={() => (extractDialog = null)}
+			/>
+		{/if}
+
+		{#if extractError}
+			<div class="extract-error" role="alert">
+				<span>{extractError}</span>
+				<button type="button" onclick={() => (extractError = null)}>Dismiss</button>
+			</div>
+		{/if}
+
 		<!-- Bottom: Status bar -->
 		<footer class="status-bar">
 			<span class="beta-badge">BETA</span>
@@ -1856,6 +2001,36 @@
 	}
 
 	/* ─── Status bar ────────────────────────────────────────────── */
+
+	.extract-error {
+		position: fixed;
+		bottom: 36px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 10001;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		max-width: min(560px, calc(100vw - 24px));
+		padding: 10px 14px;
+		border-radius: 8px;
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		color: #991b1b;
+		font-size: 12px;
+		box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+	}
+
+	.extract-error button {
+		flex-shrink: 0;
+		padding: 4px 10px;
+		border-radius: 4px;
+		border: 1px solid #fecaca;
+		background: #fff;
+		color: #991b1b;
+		font-size: 11px;
+		cursor: pointer;
+	}
 
 	.status-bar {
 		display: flex;

@@ -5,15 +5,15 @@
 | ---------------------- | ------------------------------------------------------------------------------------------------ |
 | **Owner / DRI**        | TBD                                                                                              |
 | **Status**             | Draft                                                                                            |
-| **Version**            | 0.16                                                                                             |
-| **Last updated**       | 2026-07-16                                                                                       |
+| **Version**            | 0.17                                                                                             |
+| **Last updated**       | 2026-07-21                                                                                       |
 | **Target release**     | TBD                                                                                              |
 | **Reviewers**          | eng lead, design                                                                                 |
 | **Supported browsers** | **Chrome**, **Safari** (current + previous major versions)                                       |
-| **Links**              | [BBR.MD](./BBR.MD) · [AGENTS.md](../AGENTS.md) · [CALM 1.2](https://calm.finos.org/release/1.2/) |
+| **Links**              | [BBR.MD](./BBR.MD) · [AGENTS.md](../AGENTS.md) · [CALM 1.2](https://calm.finos.org/release/1.2/) · [IDEA V4](./ideas/IDEA-calmrj-project-and-extract.md) |
 
 
-> **TL;DR** — We will extend CALM Studio with a folder browser panel for CALM files and drag-and-drop references via `detailed-architecture`, **multiple diagrams in tabs** with a JSON editor bound to the active tab, and **visual navigation to referenced diagrams** (glasses icon). We will add **structured** `metadata` **editing** in the properties panel, including field scaffolding per extension schema, and a **read-only mode** for reference nodes with `details.detailed-architecture`. **V3** polishes the file panel (reveal active file, refresh node list on save), adds **Ctrl+drag node duplication** with an optional relationship copy dialog, **focuses the referenced node** after drill-down navigation, and delivers **full diagram layout** — no overlapping boxes plus **obstacle-aware edge routing** on auto-layout, manual placement, and label resize (#16 in R23). We will fix critical JSON editor, export, and container sizing bugs. Earlier iterations add automatic `$schema` in the JSON header (CALM 1.2 + extension pack), required fields when creating elements, and direction reversal for all relationship types.
+> **TL;DR** — We will extend CALM Studio with a folder browser panel for CALM files and drag-and-drop references via `detailed-architecture`, **multiple diagrams in tabs** with a JSON editor bound to the active tab, and **visual navigation to referenced diagrams** (glasses icon). We will add **structured** `metadata` **editing** in the properties panel, including field scaffolding per extension schema, and a **read-only mode** for reference nodes with `details.detailed-architecture`. **V3** polishes the file panel (reveal active file, refresh node list on save), adds **Ctrl+drag node duplication** with an optional relationship copy dialog, **focuses the referenced node** after drill-down navigation, and delivers **full diagram layout** — no overlapping boxes plus **obstacle-aware edge routing** on auto-layout, manual placement, and label resize (#16 in R23). **V4** adds a **project file** (`*.calmrj`) for Spectral ruleset selection, directory/naming conventions, and **extract node → separate diagram** (parent becomes a `detailed-architecture` stub). We will fix critical JSON editor, export, and container sizing bugs. Earlier iterations add automatic `$schema` in the JSON header (CALM 1.2 + extension pack), required fields when creating elements, and direction reversal for all relationship types.
 
 
 
@@ -34,9 +34,9 @@
 
 ## 1. Problem and context
 
-CALM Studio today lets users model architecture in a single file with a palette of node types, but it lacks multi-file project workflows and cross-document node referencing. **The editor supports only one open diagram at a time** — switching between files replaces the window content instead of working in tabs, which complicates navigation in multi-file projects and tracking references. Nodes with `details.detailed-architecture` lack a clear visual indicator and quick navigation to the target diagram. **In V3**, even with the Files panel and tabs, users still lose orientation in large trees (no reveal for the active file), see stale node previews after save, cannot duplicate in-diagram nodes with optional relationship copy, land on a detail diagram without the referenced node in view, and suffer overlapping boxes or edges drawn through nodes after label resize or auto-layout. At the same time, the editor suffers from regressions in the JSON panel (repeated selection, jumping cursor), export omits relationships when nodes are visually nested in containers, and when the type changes to a container the element size no longer matches its visualization.
+CALM Studio today lets users model architecture in a single file with a palette of node types, but it lacks multi-file project workflows and cross-document node referencing. **The editor supports only one open diagram at a time** — switching between files replaces the window content instead of working in tabs, which complicates navigation in multi-file projects and tracking references. Nodes with `details.detailed-architecture` lack a clear visual indicator and quick navigation to the target diagram. **In V3**, even with the Files panel and tabs, users still lose orientation in large trees (no reveal for the active file), see stale node previews after save, cannot duplicate in-diagram nodes with optional relationship copy, land on a detail diagram without the referenced node in view, and suffer overlapping boxes or edges drawn through nodes after label resize or auto-layout. **In V4**, there is still no project-level config: teams cannot attach folder-scoped Spectral rules on top of core CALM validation, nor encode directory/naming conventions for new diagram files. Splitting a growing node into its own diagram requires manual file creation, path math, and stub wiring. At the same time, the editor suffers from regressions in the JSON panel (repeated selection, jumping cursor), export omits relationships when nodes are visually nested in containers, and when the type changes to a container the element size no longer matches its visualization.
 
-**Why now:** Users work with real CALM projects (multiple JSON files, cross-file references), but must switch manually outside the studio. Editor and export bugs undermine trust in the tool as the source of truth for CALM 1.2 documents.
+**Why now:** Users work with real CALM projects (multiple JSON files, cross-file references, enterprise naming like CEngineering), but must switch manually outside the studio and maintain project conventions by hand. Editor and export bugs undermine trust in the tool as the source of truth for CALM 1.2 documents.
 
 **Current state (from code analysis):**
 
@@ -60,6 +60,9 @@ CALM Studio today lets users model architecture in a single file with a palette 
 | Ctrl+drag duplicate          | Missing — only clipboard paste; no modal, no relationship copy                                            |
 | Focus after reference nav    | Missing — `handleNavigateReference` opens tab but does not select target node                             |
 | Layout overlap / edges       | Partial — text-based box sizing exists; ELK uses fixed dims; edges do not avoid boxes                     |
+| Project file (`.calmrj`)     | Missing — no project config, ruleset selection, or naming conventions                                 |
+| Folder Spectral rules        | Missing — only built-in / core validation                                                             |
+| Extract node → diagram       | Missing — manual file create + stub wiring                                                            |
 
 
 
@@ -73,6 +76,7 @@ CALM Studio today lets users model architecture in a single file with a palette 
 - Support adding references to nodes from other files via standard CALM `detailed-architecture` and **quick navigation to the referenced diagram**.
 - Remove blocking JSON editor, export, and container bugs.
 - **V3:** Speed up orientation in large projects (reveal file, fresh node list), support safe in-file node duplication, and make reference drill-down and auto-layout trustworthy on real diagrams.
+- **V4:** Persist project config in `*.calmrj` (Spectral rulesets, directory/naming conventions); **extract** a node into its own diagram file with a confirm dialog and parent stub reference.
 
 **Non-goals**
 
@@ -86,6 +90,9 @@ CALM Studio today lets users model architecture in a single file with a palette 
 - **Global undo/redo across tabs** — deferred; undo/redo applies **only within the active tab** (see #11).
 - **Generic metadata editor for arbitrary JSON Schema** without bundled pack schema in the repository — v1 only packs with `schemaUrl` / bundled schema (ArchiMate first).
 - **Opening links outside the project in the editor** — deferred; infobox + external browser tab only (see #10).
+- **Authoring Spectral rules in the UI** — V4 selects/enables existing ruleset files; rule authoring stays in external editors.
+- **Per-rule toggle inside a ruleset** — V4 enables/disables whole ruleset paths only (#19).
+- **Hard-coded CEngineering layout only** — naming is configurable; CEngineering is a bundled default profile, not the sole structure (#20).
 
 **Success metrics**
 
@@ -108,6 +115,9 @@ CALM Studio today lets users model architecture in a single file with a palette 
 | Referenced node visible after drill-down       | Tab opens, no focus     | Target node selected + in viewport within 1 s       | v3   |
 | Overlapping boxes after text resize            | Overlap on long labels  | 0 overlaps on reference test diagrams after layout  | v3   |
 | Edges through node interiors (manual layout)   | Common on drag/resize   | 0 interior intersections when alternate path exists | v3   |
+| Load / create project config on Open folder    | Not available           | Auto-load `*.calmrj` or Create wizard ≤ 2 clicks    | v4   |
+| Extra Spectral rulesets applied with core CALM | Core only               | Enabled rulesets from `.calmrj` run on validate     | v4   |
+| Extract node to new diagram file               | Manual                  | Dialog + stub + child file ≤ 4 actions              | v4   |
 
 
 
@@ -133,6 +143,8 @@ CALM Studio today lets users model architecture in a single file with a palette 
 13. **UC-13 — Duplicate node in diagram:** User holds **Ctrl**, drags an existing node, drops → modal asks for name and optional relationship copy → new node appears at drop position with new `unique-id`.
 14. **UC-14 — Drill-down with context:** User double-clicks glasses on reference → target diagram opens → the **source** node (matching reference `unique-id`) is selected and brought into view.
 15. **UC-15 — Readable layout:** User runs auto-layout or edits long labels → boxes do not overlap; relationship lines route around **all** node bounds (including manually placed nodes after resize), never through box interiors.
+16. **UC-16 — Project config:** User opens a folder; Studio loads `*.calmrj` (or offers Create). User enables Spectral ruleset paths and naming profile; settings persist in the project file.
+17. **UC-17 — Extract to diagram:** User selects a node → **Extract to diagram** → confirms folder/filename (defaults from naming config) → child file is written; parent node becomes a reference stub; child opens in a tab.
 
 **Not for:** Users outside officially supported browsers (**Chrome**, **Safari**). Firefox, Edge, and older versions without File System Access API — file panel unavailable, rest of studio may work with limitations.
 
@@ -419,6 +431,132 @@ flowchart LR
 
 
 
+### 4.13 Project file `*.calmrj` (P1 — BBR V4)
+
+When the user opens a project folder (R1), Studio looks for **exactly one** `*.calmrj` file in the **folder root** (case-insensitive match on extension).
+
+| Situation | Behavior |
+| --- | --- |
+| One `*.calmrj` found | Load as active project config |
+| None found | Offer **Create project** wizard (defaults from bundled profile); user may skip and work without project features until created |
+| Multiple `*.calmrj` | Error toast; ask user to keep one file in root |
+
+**Format:** JSON. **Filename:** any (e.g. `onebank.calmrj`, `project.calmrj`). The file is the home for:
+
+1. Enabled **Spectral** ruleset paths (relative to project root).
+2. **Directory structure + naming conventions** used by Extract (R27).
+3. Future diagram-related settings (placeholder object allowed; unused keys ignored with forward compatibility).
+
+```json
+{
+  "$schema": "https://calmstudio.local/schemas/calmrj-1.0.json",
+  "version": 1,
+  "name": "onebank",
+  "validation": {
+    "rulesets": [
+      { "path": "validation/team-rules.yaml", "enabled": true },
+      { "path": "validation/pci.yaml", "enabled": false }
+    ]
+  },
+  "naming": {
+    "profile": "cengineering-archimate",
+    "rootDirs": {
+      "application-component": "application-components"
+    },
+    "patterns": {
+      "archimate:applicationComponent": {
+        "dir": "appcomp.{{name}}",
+        "file": "{{name}}.appcomp.json"
+      },
+      "archimate:applicationService": {
+        "dir": "appserv.{{name}}",
+        "file": "{{name}}.appserv.json"
+      },
+      "archimate:applicationInterface": {
+        "dir": "ep.{{name}}",
+        "file": "{{name}}.ep.json"
+      }
+    }
+  },
+  "diagrams": {}
+}
+```
+
+- **Core CALM schema validation is always on** — project rulesets **supplement**, never replace it (#19).
+- UI: Project settings panel (or Files header menu) to toggle `enabled` per ruleset path and pick/edit naming profile.
+- Selecting a ruleset records the choice in `.calmrj` (write via FS API when user saves project settings or on Create).
+
+**Bundled default profile** `cengineering-archimate` uses stereotype + slugified **element name** (`appserv.test-service`, `ep.get-users`, `appcomp.bem`). Extract places **one subfolder** under the **current diagram’s directory** (not from project root via unique-id). Patterns remain **editable** in `.calmrj` (#20).
+
+
+
+### 4.14 Folder Spectral validation (P1 — BBR V4)
+
+- Ruleset files live in the project (typical path `validation/*.yaml` or `*.json`); `.calmrj` only stores relative paths + `enabled`.
+- On validate (toolbar / save / Problems panel): run core CALM validation, then each **enabled** Spectral ruleset against the active document (and optionally all open tabs — engineering choice; acceptance: at least active document).
+- Missing ruleset file → non-blocking warning, other rules still run.
+- **Out of scope:** in-app Spectral rule authoring; per-rule toggles inside a ruleset.
+
+
+
+### 4.15 Naming conventions for new paths (P1 — BBR V4)
+
+Used primarily by **Extract to diagram** (and future “New diagram from type” flows):
+
+1. Resolve `node-type` against `naming.patterns` in `.calmrj`. Template token `{{name}}` is the slugified node **display name** (not `unique-id`).
+2. Default folder = `dirname(current diagram)` + **one** subfolder from `dir` (e.g. `…/bem/` + `appserv.test-service`).
+3. If profile is `cengineering-archimate` and pattern missing, fall back to bundled defaults for known ArchiMate stereotypes.
+4. If still unmapped: open Extract dialog with **empty** relative folder/file fields and a warning — user must fill paths manually; Extract is not blocked (#20).
+5. Dialog always lets the user **confirm or edit** folder and filename; config values are **defaults only**.
+
+
+
+### 4.16 Extract node to separate diagram (P1 — BBR V4, #21)
+
+**Command:** context menu / properties action **Extract to diagram** on a selected canvas node (not on reference stubs that already have `detailed-architecture`).
+
+**Dialog (modal):**
+
+```
+┌─ Extract to diagram ──────────────────────────┐
+│ Folder: […/bem/appserv.test-service________]  │  ← under current diagram
+│ File:   [test-service.appserv.json_________]  │  ← from element name
+│                                               │
+│ ⚠ No naming pattern for this node-type       │  ← only if unmapped
+│                                               │
+│              [Cancel]  [Extract]              │
+└───────────────────────────────────────────────┘
+```
+
+**On Extract (atomic, best-effort with rollback on write failure):**
+
+1. **Child architecture** = selected node + **containment descendants** (via `composed-of` / `deployed-in` / canvas `parentId`) + relationships whose **all** endpoints lie inside that node set.
+2. Write child CALM JSON to `folder/file` under project root (create intermediate directories). Path relative to project; overwrite requires confirm if file exists.
+3. In **parent** diagram: remove extracted nodes and internal relationships from the model; replace the selected node with a **stub** that keeps the **same** `unique-id`, display fields (`name`, `node-type`, `description`), and sets `details.detailed-architecture` to the **relative path** from the parent file to the new child (R4 / CALM 1.2 string).
+4. **External relationships** (one endpoint outside the extract set) **remain on the stub** in the parent — do not move to the child.
+5. Mark parent dirty; write child file; refresh Files tree for new path (R20-style); **open child in a new tab** (or activate if somehow already open).
+6. Stub shows glasses icon (R16); properties read-only (R18).
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Dialog
+  participant Parent
+  participant FS
+  participant Tabs
+
+  User->>Dialog: Extract to diagram
+  Dialog-->>User: folder/file defaults from .calmrj
+  User->>Dialog: confirm / edit, Extract
+  Dialog->>FS: write child architecture
+  Dialog->>Parent: stub + detailed-architecture; drop extracted subgraph
+  Dialog->>Tabs: open child tab
+```
+
+**Allowed types:** all node types. Reference proxies (already have `detailed-architecture`) — Extract **disabled**.
+
+
+
 ```json
 {
   "unique-id": "ref-api-gateway",
@@ -524,7 +662,20 @@ flowchart TB
 
 
 
-### Iteration 4 — P2
+### Iteration 4 — P1 (BBR V4 — project file, Spectral rules, extract)
+
+
+| ID  | User story                                                                                                      | Priority | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Status |
+| --- | --------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| R24 | As an architect I want a `*.calmrj` project file so project settings live with the folder.                      | P1       | - [ ] On Open folder: detect one root `*.calmrj` (case-insensitive) and load it - [ ] Zero files → **Create project** wizard (or skip) - [ ] Multiple → error; do not guess - [ ] JSON format; any filename; writable via FS API - [ ] Stores `validation.rulesets[]`, `naming` profile/patterns, extensible `diagrams` object - [ ] Create seeds bundled profile `cengineering-archimate` (#20)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Open   |
+| R25 | As an architect I want folder Spectral rulesets that supplement core CALM validation.                           | P1       | - [ ] Core CALM schema validation **always** runs - [ ] Enabled ruleset paths from `.calmrj` run via Spectral against at least the active document - [ ] UI to enable/disable ruleset entries; persists to `.calmrj` - [ ] Paths relative to project root - [ ] Missing file → warning, other rules continue - [ ] **No** in-app rule authoring; **no** per-rule toggles (#19)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Open   |
+| R26 | As an architect I want naming/directory conventions in the project so new diagram paths have sane defaults.     | P1       | - [ ] `.calmrj` `naming.patterns` map `node-type` → `dir` + `file` templates - [ ] Bundled default profile `cengineering-archimate` (AppComp / AppServ / Endpoint style paths) - [ ] Patterns editable; not hard-coded as sole layout (#20) - [ ] Unmapped type → Extract dialog with empty path fields + warning (not blocked)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Open   |
+| R27 | As an architect I want to extract a node into its own diagram and leave a reference stub in the parent.         | P1       | - [ ] **Extract to diagram** on selected node (disabled if already a reference stub) - [ ] Modal: folder + filename, defaults from R26; user can edit - [ ] Child file = node + containment descendants + relationships fully inside set - [ ] Parent: stub keeps **same** `unique-id`, sets `details.detailed-architecture` relative path (#21) - [ ] External relationships stay on stub in parent - [ ] Create dirs as needed; overwrite confirm if file exists - [ ] Open child tab after success; Files tree shows new file - [ ] Stub gets glasses (R16) and read-only properties (R18) - [ ] All node types allowed except existing references                                                                                                                                                                                                                                                                                    | Open   |
+
+
+
+
+### Iteration 5 — P2
 
 
 | ID  | User story                                             | Priority | Acceptance criteria                                   | Status |
@@ -538,6 +689,7 @@ flowchart TB
 - CALM 1.2 nested `relationship-type` remains the canonical format (see `AGENTS.md`).
 - File System Access API is available in target browsers — official support: **Chrome** and **Safari**.
 - `details.detailed-architecture` (string, relative path) is the accepted cross-file reference approach in CALM 1.2.
+- Spectral engine used for project rulesets is compatible with `calm validate` / shared validation stack where feasible.
 
 
 
@@ -559,6 +711,7 @@ flowchart TB
 │       ○ Auth Service    │
 │     📄 data-layer.json  │
 │   config.json           │
+│   onebank.calmrj        │  ← project file (R24)
 └─────────────────────────┘
 ```
 
@@ -576,6 +729,8 @@ flowchart TB
 | Double-click glasses | Inside project: editor tab; outside project: infobox + browser link (R16)                              |
 | **Reveal in tree**   | If Palette active → switch to Files; expand ancestors, scroll to active tab file, highlight (R19, #18) |
 | After **Save**       | Refresh node preview list for saved file if in project (R20)                                           |
+| Open folder          | Load `*.calmrj` or offer Create project (R24)                                                          |
+| **Extract to diagram** | Context menu on node → path dialog → child file + parent stub (R27)                                  |
 
 
 
@@ -595,6 +750,22 @@ flowchart TB
 - Shown on Ctrl+drop of an existing node (canvas or inside container).
 - OK creates copy at drop position; if inside container, nests copy with containment edge (#17).
 - Cancel aborts.
+
+
+
+### Extract to diagram modal (V4, R27)
+
+```
+┌─ Extract to diagram ──────────────────────────┐
+│ Folder: [application-components/bem________]  │
+│ File:   [bem.appcomp.json__________________]  │
+│                                               │
+│              [Cancel]  [Extract]              │
+└───────────────────────────────────────────────┘
+```
+
+- Defaults from `.calmrj` naming; user may edit both fields.
+- Extract writes child, rewrites parent stub, opens child tab.
 
 
 
@@ -721,6 +892,7 @@ TBD — Figma link after review.
 | **Duplicate modal (V3)**       | `CalmCanvas.svelte`, `DuplicateNodeDialog.svelte` (new), `calmModel.svelte.ts` | Ctrl+drag detection; relationship clone in current file only (R21)                              |
 | **Reference focus (V3)**       | `+page.svelte` (`handleNavigateReference`), `CalmCanvas.svelte`                | Post-open select + `fitView` by `unique-id` (R22)                                               |
 | **Layout (V3)**                | `elkLayout.ts`, `rectangleNodeSize.ts`, `edgeRouting/` (new), edge components  | Measured dims → ELK; obstacle router shared by all edges (R23, #16)                             |
+| **Project + extract (V4)**     | `apps/studio/src/lib/project/` (new), validation Spectral bridge, Extract dialog | Load/create `.calmrj`; ruleset enable; naming resolve; extract subgraph (R24–R27)               |
 | **Tab manager (new)**          | `apps/studio/src/lib/tabs/`                                                    | TabBar, per-tab model/canvas state, FIFO limit 10, close/evict guards                           |
 | Layout                         | `apps/studio/src/routes/+page.svelte`                                          | Palette/Files toggle, TabBar, active tab → canvas + JSON                                        |
 | JSON sync                      | `apps/studio/src/lib/editor/CodePanel.svelte`, `useJsonSync.ts`                | Fix selection + cursor; bind to active tab                                                      |
@@ -1044,6 +1216,9 @@ Extend / add:
 - `apps/studio/src/tests/reference-focus.test.ts` — new (post-nav select + viewport) (V3)
 - `apps/studio/src/tests/layout/overlap.test.ts` — new (no sibling overlap after layout) (V3)
 - `apps/studio/src/tests/layout/obstacleRouter.test.ts` — new (orthogonal routing, padding, resize re-route, manual drag) (V3, #16)
+- `apps/studio/src/tests/project/calmrj.test.ts` — new (load/create, multiple-file error) (V4)
+- `apps/studio/src/tests/project/namingResolve.test.ts` — new (pattern templates, unmapped fallback) (V4)
+- `apps/studio/src/tests/project/extractNode.test.ts` — new (subgraph, stub id, external rels) (V4)
 - `components/EdgeProperties.test.ts` — swap direction (P1)
 - `components/MetadataForm.test.ts` — schema-driven fields, enum/required (P1)
 - `reference-readonly.test.ts` — properties locked when `detailed-architecture` set (P1)
@@ -1051,6 +1226,18 @@ Extend / add:
 
 
 ## 8. Release criteria and rollout
+
+
+
+### Definition of Done — iteration 4 (P1, BBR V4)
+
+- [ ] All acceptance criteria R24–R27 met
+- [ ] Unit tests for `.calmrj` load/create, naming resolve, extract subgraph + stub
+- [ ] Manual smoke: Open folder without `.calmrj` → Create → file appears in root
+- [ ] Manual smoke: enable Spectral ruleset → validate shows extra findings on fixture
+- [ ] Manual smoke: Extract AppComp-like node → child path from defaults → stub + glasses → open child tab
+- [ ] Manual smoke: extract nested container → children move to child file; external `connects` stays on stub
+- [ ] Manual smoke: unmapped node-type → warning + empty path fields still extractable after manual path
 
 
 
@@ -1121,6 +1308,10 @@ Extend / add:
 | 16  | ~~Edge obstacle routing for manually placed nodes after resize~~             | —        | PM     | **Confirmed** — full in-scope for R23: shared orthogonal obstacle router, live on drag/resize (#16)          |
 | 17  | ~~Ctrl+drag into container while duplicating~~                               | —        | PM     | **Confirmed** — duplicate at drop position; drop inside container → apply containment on **copy** only (#17) |
 | 18  | ~~Reveal when Files panel on Palette tab~~                                   | —        | PM     | **Confirmed** — auto-switch left panel to Files tab on Reveal click (#18)                                    |
+| 19  | ~~Project validation rules format / selection granularity~~                  | —        | PM     | **Resolved** — Spectral rulesets; `.calmrj` path + enabled flag; core CALM always on; no per-rule toggle     |
+| 20  | ~~Naming conventions hard-coded vs configurable~~                            | —        | PM     | **Resolved** — configurable patterns in `.calmrj` + bundled `cengineering-archimate` default                 |
+| 21  | ~~Extract node semantics (subgraph, stub id, external rels)~~                | —        | PM     | **Resolved** — children+internal rels to child; same `unique-id` stub; external rels stay on parent stub     |
+| 22  | ~~`.calmrj` discovery / create~~                                             | —        | PM     | **Resolved** — one root `*.calmrj`; Create wizard if missing; error if multiple                              |
 
 
 
@@ -1147,7 +1338,9 @@ Extend / add:
 | Reveal in tree          | Scroll Files panel to active tab's project file (R19)                        |
 | Relationship clone      | In-file only; rewire endpoints to new `unique-id` (R21)                      |
 | Obstacle router         | Orthogonal path around node bboxes; shared by all edge components (R23, #16) |
-
+| `.calmrj` / project file | JSON project config at folder root — rulesets, naming, future diagram settings (R24) |
+| Extract to diagram      | Move node subgraph to new file; parent becomes `detailed-architecture` stub (R27) |
+| Naming profile          | Template map `node-type` → dir/file; default `cengineering-archimate` (R26) |
 
 
 
@@ -1164,6 +1357,10 @@ Extend / add:
 9. **V3 duplication** (R21) — Ctrl+drag modal + optional relationship clone
 10. **V3 reference focus** (R22) — extend glasses navigation
 11. **V3 layout** (R23) — measured ELK dims, overlap fix, **full obstacle edge routing (#16)**
+12. **V4 project file** (R24, R26) — load/create `.calmrj`, naming profile
+13. **V4 Spectral rules** (R25) — enable paths; supplement core validation
+14. **V4 extract** (R27) — dialog, subgraph move, stub, open child tab
+15. **P2 desktop / watch** (R13, R14)
 
 
 
@@ -1174,6 +1371,8 @@ Extend / add:
 - Follow Svelte 5 runes, TypeScript strict.
 - Tests required for P0 bugfixes and file panel.
 - **R23 / #16:** implement `obstacleRouter.ts` as pure TS; all five edge components must use it — do not leave some on `getSmoothStepPath`.
+- **R27 / #21:** extract stub must keep the same `unique-id` as the source node; external relationships stay on the parent stub.
+- **R25 / #19:** never disable core CALM schema validation when applying project Spectral rulesets.
 
 
 
@@ -1198,6 +1397,7 @@ Extend / add:
 | 2026-07-16 | 0.14    | stakeholder      | **BBR V3 (lines 19–24):** R19–R23 reveal in tree, save refresh, Ctrl+drag duplicate, reference focus, layout overlap; iteration 4 = former P2 (R13–R14) |
 | 2026-07-16 | 0.15    | stakeholder      | **Confirmed #17, #18:** container drop on duplicate; auto-switch to Files on Reveal                                                                     |
 | 2026-07-16 | 0.16    | stakeholder      | **Confirmed #16:** full obstacle-aware edge routing in R23 scope (manual placement + resize)                                                            |
+| 2026-07-21 | 0.17    | stakeholder      | **BBR V4 (lines 26–30):** R24–R27 `.calmrj`, Spectral rulesets, naming profile, extract-to-diagram; R13–R14 → Iteration 5; decisions #19–#22             |
 
 
 
@@ -1262,5 +1462,22 @@ Extend / add:
 | Post-nav focus id        | Reference node's `unique-id` (= source id in target file, R4)                                             |
 | Layout overlap           | Measured dims to ELK; zero sibling overlap on reference diagrams (R23)                                    |
 | Edge obstacle routing    | **Confirmed (#16):** shared orthogonal router; 8 px padding; all edge types; live re-route on drag/resize |
+
+
+
+### Session decisions (2026-07-21, BBR V4)
+
+
+| Decision                    | Choice                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Validation rules format     | Spectral rulesets; paths + `enabled` in `.calmrj`; core CALM always on (#19)                                |
+| Per-rule toggle             | Out of scope — whole ruleset only                                                                           |
+| Project file                | `*.calmrj` JSON, any name, one in root; Create if missing; error if multiple (#22)                          |
+| Naming                      | Configurable patterns + bundled `cengineering-archimate`; unmapped → empty path + warning (#20)             |
+| Extract subgraph            | Node + containment children + internal relationships (#21)                                                  |
+| Extract stub                | Same `unique-id` + `detailed-architecture` relative path                                                    |
+| External relationships      | Remain on stub in parent                                                                                    |
+| Extract node types          | All except existing reference stubs; open child tab after OK                                                |
+| Iteration priority          | V4 = Iteration 4 (P1); Tauri/watch R13–R14 = Iteration 5                                                    |
 
 

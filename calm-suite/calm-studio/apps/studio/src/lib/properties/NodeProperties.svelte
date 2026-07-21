@@ -28,6 +28,7 @@
 		onmutate,
 		ontogglepin,
 		onopenreference,
+		onextract,
 	}: {
 		node: Node;
 		/** Called once before the first mutation per selection — used to push undo snapshot. */
@@ -38,6 +39,8 @@
 		ontogglepin?: (nodeId: string) => void;
 		/** Open the source diagram for a reference node (R16/R18). */
 		onopenreference?: (nodeId: string) => void;
+		/** Extract node to its own diagram file (R27). */
+		onextract?: (nodeId: string) => void;
 	} = $props();
 
 	const nd = $derived(asCalmFlowNodeData(node.data as Record<string, unknown>));
@@ -172,6 +175,17 @@
 	<div class="props-header">
 		<span class="header-label">Node Properties</span>
 		<div class="header-actions">
+			{#if onextract && !isReference}
+				<button
+					type="button"
+					class="extract-btn"
+					onclick={() => onextract(nd.calmId)}
+					title="Extract to separate diagram"
+					aria-label="Extract to diagram"
+				>
+					Extract…
+				</button>
+			{/if}
 			{#if ontogglepin && !isReference}
 				<button
 					type="button"
@@ -389,6 +403,22 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.15s;
+	}
+
+	.extract-btn {
+		padding: 2px 6px;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: 6px;
+		background: var(--color-surface, #fff);
+		color: var(--color-text-secondary, #475569);
+		font-size: 10px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.extract-btn:hover {
+		background: var(--color-surface-secondary, #f1f5f9);
+		color: var(--color-text-primary, #1e293b);
 	}
 
 	.pin-toggle-btn:hover {

@@ -50,6 +50,11 @@
 	export async function refreshSavedFile(relativePath: string): Promise<void> {
 		await fileExplorer?.refreshFileNodes(relativePath);
 	}
+
+	/** R27 — rescan tree after extract creates files. */
+	export async function rescanTree(): Promise<void> {
+		await fileExplorer?.rescanTree();
+	}
 </script>
 
 <div class="left-sidebar">

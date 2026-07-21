@@ -16,11 +16,17 @@ V2
 - 
 -------
 V3
-- přidat tlačitko do files pro vyhledáí aktuálně otevřeného souboru ve stromu 
+- přidat tlačitko do files pro vyhledáí aktuálně otevřeného souboru ve stromu souborů
 - při uloženi souboru aktualizovat seznam nodu v adresařové struktuře v založce files.
 - pri tažení nodu  s ctrl udělat kopii nodu s novým unique-id a názvem  a na dotaz zduplikovat i vazby. Dialog pro zadání názvu a check box na duplikaci vazeb bude modálni a check box si bude pamatvat posledni stav. DEfault check boxu je nezškrtnuto tudiž se vazby neduplikuji i nanaový element. Vazby se duplikuji vraci daneho souboru ne dál.
-- po přechodu na detailový diagram  vybrat (fokus)  referencovany node 
-- upravit layout tak aby nedochazelo k prekryvu boxu po jejich roztažení na zakaldě textu 
+- po přechodu na detailový diagram  dat  fokus  referencovany node 
+- upravit layout tak aby nedocházelo k prekryvu boxu po jejich roztažení na zakaldě textu a relation se vyhibaly boxum 
+------
+V4
+- umožnit ve složce definici validačnich pravidel doplnujici standartní pravidla.
+- vyber pravidel zaznamenj do kořenove složky do souboru s koncovkou CALMPRJ do tohoto souboru nasledne budem ukládat dalši konfigurace souvisejici s diagramy ve složce
+- v konfiguraci projektu bude i definice struktury adresářu a jmená konvence, která se uplatni pri přechodu v nasledujicím bodu nastaveni vzchazi z CEngineering-App\docs\naming-conventions.md 
+- umožnit převest  nod z diagramu na samosatný diagram.  Nod v aktualnim diagramu  nahradit za referenci na nod v novém  diagramu. Název souboru  s diagramem vytvoř dle definice v konfigiuraci. Včetně patřičné složky jeli v konfiguraci definovana.  Název složky a souboru nech potvrdit pripadně upravit  uživatele pomoci dialogu. Hodnoty z konfigurace nastav jako default. 
 
 ----
 
