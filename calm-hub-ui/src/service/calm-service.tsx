@@ -29,8 +29,27 @@ function summaryPageQuery(limit?: number, offset?: number): string {
 }
 
 /**
+ * Extracts a server-provided error message from a failed request, falling back to
+ * `fallback` when the response body doesn't carry one. Namespace/domain mutation
+ * endpoints return either a plain-text body (e.g. "Invalid namespace provided: x")
+ * or a `{"error": "..."}` JSON body, depending on the failure — this normalizes both
+ * so the UI can surface the specific reason instead of one generic message for
+ * every failure.
+ */
+function extractServerErrorMessage(error: unknown, fallback: string): string {
+    const data = (error as { response?: { data?: unknown } })?.response?.data;
+    if (typeof data === 'string' && data.trim()) {
+        return data;
+    }
+    if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string') {
+        return (data as { error: string }).error;
+    }
+    return fallback;
+}
+
+/**
  * Service for interacting with CALM API endpoints.
- * 
+ *
  * TODO: Add type safety for API responses by:
  * - Defining response interfaces (e.g., NamespacesResponse, PatternIDsResponse)
  * - Validating responses at runtime (e.g., with Zod or similar validation library)
@@ -55,11 +74,27 @@ export class CalmService {
                 const namespaces = (res.data?.values ?? [])
                     .map((v: { name?: string }) => v?.name)
                     .filter((name: string | undefined): name is string => !!name);
-                return namespaces;
+                return namespaces.sort((a: string, b: string) => a.localeCompare(b));
             })
             .catch((error) => {
                 const errorMessage = 'Error fetching namespaces:';
                 console.error(errorMessage, error);
+                return Promise.reject(new Error(errorMessage));
+            });
+    }
+
+    public async fetchNamespaceDetails(): Promise<{ name: string; description: string }[]> {
+        const headers = await getAuthHeaders();
+        return this.ax
+            .get('/api/calm/namespaces', { headers })
+            .then((res) => {
+                const namespaces: { name: string; description: string }[] =
+                    Array.isArray(res.data?.values) ? res.data.values : [];
+                return namespaces.sort((a, b) => a.name.localeCompare(b.name));
+            })
+            .catch((error) => {
+                const errorMessage = 'Error fetching namespaces:';
+                console.error('%s', errorMessage, error);
                 return Promise.reject(new Error(errorMessage));
             });
     }
@@ -69,7 +104,8 @@ export class CalmService {
         return this.ax
             .get('/api/calm/domains', { headers })
             .then((res) => {
-                return Array.isArray(res.data?.values) ? res.data.values : [];
+                const domains: string[] = Array.isArray(res.data?.values) ? res.data.values : [];
+                return domains.sort((a, b) => a.localeCompare(b));
             })
             .catch((error) => {
                 const errorMessage = 'Error fetching domains:';
@@ -84,7 +120,31 @@ export class CalmService {
             .post('/api/calm/namespaces', { name, description }, { headers })
             .then(() => undefined)
             .catch((error) => {
-                const errorMessage = `Error creating namespace ${name}:`;
+                const errorMessage = extractServerErrorMessage(error, `Error creating namespace ${name}:`);
+                console.error('%s', errorMessage, error);
+                return Promise.reject(new Error(errorMessage));
+            });
+    }
+
+    public async updateNamespace(name: string, description: string): Promise<void> {
+        const headers = await getAuthHeaders();
+        return this.ax
+            .put(`/api/calm/namespaces/${encodeURIComponent(name)}`, { description }, { headers })
+            .then(() => undefined)
+            .catch((error) => {
+                const errorMessage = extractServerErrorMessage(error, `Error updating namespace ${name}:`);
+                console.error('%s', errorMessage, error);
+                return Promise.reject(new Error(errorMessage));
+            });
+    }
+
+    public async deleteNamespace(name: string): Promise<void> {
+        const headers = await getAuthHeaders();
+        return this.ax
+            .delete(`/api/calm/namespaces/${encodeURIComponent(name)}`, { headers })
+            .then(() => undefined)
+            .catch((error) => {
+                const errorMessage = extractServerErrorMessage(error, `Error deleting namespace ${name}:`);
                 console.error('%s', errorMessage, error);
                 return Promise.reject(new Error(errorMessage));
             });
@@ -96,7 +156,19 @@ export class CalmService {
             .post('/api/calm/domains', { name }, { headers })
             .then(() => undefined)
             .catch((error) => {
-                const errorMessage = `Error creating domain ${name}:`;
+                const errorMessage = extractServerErrorMessage(error, `Error creating domain ${name}:`);
+                console.error('%s', errorMessage, error);
+                return Promise.reject(new Error(errorMessage));
+            });
+    }
+
+    public async deleteDomain(name: string): Promise<void> {
+        const headers = await getAuthHeaders();
+        return this.ax
+            .delete(`/api/calm/domains/${encodeURIComponent(name)}`, { headers })
+            .then(() => undefined)
+            .catch((error) => {
+                const errorMessage = extractServerErrorMessage(error, `Error deleting domain ${name}:`);
                 console.error('%s', errorMessage, error);
                 return Promise.reject(new Error(errorMessage));
             });
