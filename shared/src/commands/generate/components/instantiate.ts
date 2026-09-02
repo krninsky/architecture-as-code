@@ -1,5 +1,5 @@
 import { SchemaDirectory } from '../../../schema-directory';
-import { getPropertyValue, JsonSchema } from './property';
+import { getPropertyValue, type JsonSchema } from './property';
 
 interface PatternDefinition {
     $ref?: string;

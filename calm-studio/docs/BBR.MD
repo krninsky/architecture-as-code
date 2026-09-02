@@ -68,6 +68,10 @@ V7
 - v dialogu pro nastavení projektu umožni výběr adresařů u položek predstavujici adresaře u souboru umožni vyber souboru z disku
 - umožnit použivat pattern  format z CALM CLI  pro generovani z  template a nabidnout patterny jako template v nabidce - !! pro genrovani použit voláni calm cli nebo import funkčnosti na urovni zdrojového kódu. Ne nová implementace !!
 V8
+- rozsirit validaci dle patternů pomoci calm cli
+- v konfiguraci umožnit editaci sekce naming a patterns  
+- umožnit načtené patternů z nakofigurovaneho calm-hub konfigurace bude obsahovat url calm hubu jednotlive name space se zobrazi jako založky v nabidce patternů
+V9
 - sjednotit layout diagramů s calm_hub
 - extenzion do samostatné definice pro každou extenzion. Požadavek je aby se definice dala použit napřič spektrem tools jako je CALM-hub a calm plugin pro visual studio a calm-cli. Umožnit načist definici externě ze souboru.
 ```

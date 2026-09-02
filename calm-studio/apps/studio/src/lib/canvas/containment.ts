@@ -183,6 +183,11 @@ export function ensureContainmentEdge(
 	);
 	if (exists) return edges;
 
+	const sibling = edges.find((e) => e.source === parentId && e.type === variant);
+	const calmRelId = String(
+		(sibling?.data as { calmRelId?: string } | undefined)?.calmRelId ?? sibling?.id ?? nanoid()
+	);
+
 	return [
 		...edges,
 		{
@@ -195,9 +200,88 @@ export function ensureContainmentEdge(
 				protocol: '',
 				description: '',
 				calmVariant: variant,
+				calmRelId,
 			},
 		},
 	];
+}
+
+function stillContainedByOtherRel(
+	childId: string,
+	edges: Edge[],
+	exceptRelId: string
+): boolean {
+	return edges.some((e) => {
+		if (!isContainmentType(e.type ?? '') || e.target !== childId) return false;
+		const id = String((e.data as { calmRelId?: string } | undefined)?.calmRelId ?? e.id);
+		return id !== exceptRelId;
+	});
+}
+
+/**
+ * Replace the member list of a containment relationship (same calmRelId).
+ * Un-nests children that are no longer listed (unless another containment rel still includes them).
+ * Empty list deletes the relationship.
+ */
+export function setContainmentMembers(
+	parentId: string,
+	calmRelId: string,
+	variant: 'composed-of' | 'deployed-in',
+	nextChildIds: string[],
+	nodes: Node[],
+	edges: Edge[]
+): { nodes: Node[]; edges: Edge[] } {
+	const uniqueNext = [...new Set(nextChildIds)];
+	const current = edges.filter((e) => {
+		if (e.source !== parentId || e.type !== variant) return false;
+		const id = String((e.data as { calmRelId?: string } | undefined)?.calmRelId ?? e.id);
+		return id === calmRelId;
+	});
+	const currentIds = new Set(current.map((e) => e.target));
+	const nextIds = new Set(uniqueNext);
+
+	let nextEdges = edges.filter((e) => {
+		if (e.source !== parentId || e.type !== variant) return true;
+		const id = String((e.data as { calmRelId?: string } | undefined)?.calmRelId ?? e.id);
+		if (id !== calmRelId) return true;
+		return nextIds.has(e.target);
+	});
+
+	let nextNodes = nodes;
+	for (const childId of currentIds) {
+		if (nextIds.has(childId)) continue;
+		if (!stillContainedByOtherRel(childId, nextEdges, calmRelId)) {
+			nextNodes = removeContainment(childId, nextNodes);
+		}
+	}
+
+	for (const childId of uniqueNext) {
+		if (currentIds.has(childId)) continue;
+		nextNodes = makeContainment(parentId, childId, nextNodes);
+		nextEdges = ensureContainmentEdge(parentId, childId, nextEdges, variant);
+		nextEdges = nextEdges.map((e) => {
+			if (e.source !== parentId || e.target !== childId || e.type !== variant) return e;
+			return { ...e, data: { ...e.data, calmRelId, calmVariant: variant } };
+		});
+	}
+
+	return { nodes: syncContainmentRelData(nextNodes, nextEdges), edges: nextEdges };
+}
+
+/**
+ * Remove a child from every containment relationship of its parent and un-nest.
+ */
+export function extractChildFromParent(
+	parentId: string,
+	childId: string,
+	nodes: Node[],
+	edges: Edge[]
+): { nodes: Node[]; edges: Edge[] } {
+	const nextEdges = edges.filter(
+		(e) => !(isContainmentType(e.type ?? '') && e.source === parentId && e.target === childId)
+	);
+	const nextNodes = removeContainment(childId, nodes);
+	return { nodes: syncContainmentRelData(nextNodes, nextEdges), edges: nextEdges };
 }
 
 /**

@@ -31,6 +31,7 @@
 		onextract,
 		onfindneighbors,
 		onfindusage,
+		oncontainmentmembers,
 	}: {
 		selectedNode?: Node | null;
 		selectedEdge?: Edge | null;
@@ -52,6 +53,8 @@
 		onfindneighbors?: (nodeId: string) => void;
 		/** Find usages of this node in other files (R37). */
 		onfindusage?: (nodeId: string) => void;
+		/** Update composed-of / deployed-in members (R38). */
+		oncontainmentmembers?: (nextNodeIds: string[]) => void;
 	} = $props();
 
 	/** Prefer node when both are somehow selected. */
@@ -150,6 +153,7 @@
 						onBeforeFirstEdit={readonly ? undefined : onBeforeFirstEdit}
 						onmutate={readonly ? undefined : onmutate}
 						onswap={readonly ? undefined : onswapedge}
+						oncontainmentmembers={readonly ? undefined : oncontainmentmembers}
 					/>
 				{/if}
 			{:else if activeTab === 'governance'}

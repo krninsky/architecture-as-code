@@ -15,9 +15,9 @@
  *   unique-id (`<base>#<i>`) so Svelte Flow stays 1-edge-per-row.
  *
  * flowToCalm: converts Svelte Flow nodes[] and edges[] back to
- * CalmArchitecture. Each Svelte Flow edge becomes exactly one
- * CalmRelationship; multi-child round-trips therefore split into
- * separate single-child rels (a documented, lossy-but-correct trade-off).
+ * CalmArchitecture. Containment edges (`composed-of` / `deployed-in`) that
+ * share a container are merged into one relationship with `nodes[]`.
+ * Other variants remain one relationship per canvas edge.
  *
  * IMPORTANT: This file must NOT import from .svelte.ts files (not testable
  * in vitest without additional Svelte transform setup).
@@ -40,6 +40,7 @@ import {
 	CONTAINER_DEFAULT_WIDTH,
 	CONTAINER_DEFAULT_HEIGHT,
 } from '$lib/canvas/containment';
+import { mergeContainmentRelationships } from './mergeContainmentRelationships';
 import {
 	estimateRectangleNodeSize,
 	resolveRectangleNodeWidth,
@@ -160,6 +161,9 @@ export function calmToFlow(
 	arch: CalmArchitecture,
 	positionMap?: Map<string, { x: number; y: number; width?: number; height?: number }>
 ): { nodes: Node[]; edges: Edge[] } {
+	const { architecture: merged } = mergeContainmentRelationships(arch);
+	arch = merged;
+
 	// Build containment map from CALM relationships.
 	//   composed-of: container is parent of each child
 	//   deployed-in: container is parent of each child
@@ -277,9 +281,8 @@ export function calmToFlow(
 
 	// Expand each CALM relationship into one or more Svelte Flow edges.
 	// We tag each edge with its source CalmRelationship's unique-id and variant
-	// in `data.calm` so flowToCalm can reconstruct the nested form losslessly
-	// for the common 1:1 case and as separate single-child rels for the
-	// multi-child case (documented trade-off).
+	// in `data.calmRelId` so flowToCalm can merge containment children back into
+	// one relationship with `nodes[]`.
 	const edges: Edge[] = [];
 	for (const cr of arch.relationships) {
 		const pairs = expandEdgePairs(cr);
@@ -341,6 +344,41 @@ function inferContainmentEdgesFromParentIds(nodes: Node[], edges: Edge[]): Edge[
 	return inferred.length > 0 ? [...edges, ...inferred] : edges;
 }
 
+function relationshipIdForEdge(e: Edge): string {
+	const d = (e.data ?? {}) as { calmRelId?: string };
+	if (d.calmRelId) return d.calmRelId;
+	const hash = e.id.indexOf('#');
+	if (hash > 0) return e.id.slice(0, hash);
+	return e.id;
+}
+
+function edgeToRelationship(
+	e: Edge,
+	variant: CalmRelationshipVariant,
+	sourceId: string,
+	targetId: string
+): CalmRelationship {
+	const edgeData = (e.data ?? {}) as {
+		protocol?: string;
+		description?: string;
+		controls?: CalmControls;
+		metadata?: Record<string, unknown>;
+	};
+	const rel: CalmRelationship = {
+		'unique-id': relationshipIdForEdge(e),
+		'relationship-type': buildRelationshipType(variant, sourceId, targetId),
+	};
+	if (edgeData.protocol) rel.protocol = edgeData.protocol as CalmProtocol;
+	if (edgeData.description) rel.description = edgeData.description;
+	if (edgeData.controls && Object.keys(edgeData.controls).length > 0) {
+		rel.controls = edgeData.controls;
+	}
+	if (edgeData.metadata && Object.keys(edgeData.metadata).length > 0) {
+		rel.metadata = edgeData.metadata;
+	}
+	return rel;
+}
+
 /**
  * Converts Svelte Flow nodes and edges back to a CalmArchitecture.
  */
@@ -388,38 +426,52 @@ export function flowToCalm(nodes: Node[], edges: Edge[]): CalmArchitecture {
 		return node;
 	});
 
-	const calmRelationships: CalmRelationship[] = allEdges.map((e: Edge) => {
-		const edgeData = (e.data ?? {}) as {
-			calmRelId?: string;
-			calmVariant?: CalmRelationshipVariant;
-			protocol?: string;
-			description?: string;
-			controls?: CalmControls;
-			metadata?: Record<string, unknown>;
-		};
+	const nonContainment: CalmRelationship[] = [];
+	type ContainmentGroup = {
+		rel: CalmRelationship;
+		nodes: string[];
+		variant: 'composed-of' | 'deployed-in';
+		container: string;
+	};
+	const groups = new Map<string, ContainmentGroup>();
 
+	for (const e of allEdges) {
+		const edgeData = (e.data ?? {}) as { calmVariant?: CalmRelationshipVariant };
 		const variant =
 			edgeData.calmVariant ??
 			((e.type as CalmRelationshipVariant | undefined) ?? 'connects');
 		const sourceId = flowIdToCalmId.get(e.source) ?? e.source;
 		const targetId = flowIdToCalmId.get(e.target) ?? e.target;
+		const rel = edgeToRelationship(e, variant, sourceId, targetId);
 
-		const rel: CalmRelationship = {
-			'unique-id': e.id,
-			'relationship-type': buildRelationshipType(variant, sourceId, targetId)
-		};
-
-		if (edgeData.protocol) rel.protocol = edgeData.protocol as CalmProtocol;
-		if (edgeData.description) rel.description = edgeData.description;
-		if (edgeData.controls && Object.keys(edgeData.controls).length > 0) {
-			rel.controls = edgeData.controls;
-		}
-		if (edgeData.metadata && Object.keys(edgeData.metadata).length > 0) {
-			rel.metadata = edgeData.metadata;
+		if (variant !== 'composed-of' && variant !== 'deployed-in') {
+			nonContainment.push(rel);
+			continue;
 		}
 
-		return rel;
-	});
+		const key = `${variant}::${sourceId}`;
+		const existing = groups.get(key);
+		if (!existing) {
+			groups.set(key, {
+				rel,
+				nodes: [targetId],
+				variant,
+				container: sourceId,
+			});
+			continue;
+		}
+		if (!existing.nodes.includes(targetId)) {
+			existing.nodes.push(targetId);
+		}
+	}
 
-	return { nodes: calmNodes, relationships: calmRelationships };
+	const containmentRels: CalmRelationship[] = [...groups.values()].map((g) => ({
+		...g.rel,
+		'relationship-type':
+			g.variant === 'composed-of'
+				? { 'composed-of': { container: g.container, nodes: g.nodes } }
+				: { 'deployed-in': { container: g.container, nodes: g.nodes } },
+	}));
+
+	return { nodes: calmNodes, relationships: [...nonContainment, ...containmentRels] };
 }

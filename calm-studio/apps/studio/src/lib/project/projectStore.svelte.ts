@@ -11,6 +11,7 @@ import {
 	writeProjectRelativeFile,
 } from './projectFs';
 import { applyProjectTemplates } from '$lib/templates/projectTemplates';
+import { applyProjectPatterns } from '$lib/templates/projectPatterns';
 
 let rootHandle = $state<FileSystemDirectoryHandle | null>(null);
 let config = $state<CalmProjectConfig | null>(null);
@@ -18,6 +19,15 @@ let configFileName = $state<string | null>(null);
 let loadError = $state<string | null>(null);
 let needsCreate = $state(false);
 let templateWarnings = $state<string[]>([]);
+
+async function refreshDerivedProjectAssets(
+	handle: FileSystemDirectoryHandle | null,
+	cfg: CalmProjectConfig | null
+): Promise<void> {
+	const templates = await applyProjectTemplates(handle, cfg);
+	const patterns = await applyProjectPatterns(handle, cfg);
+	templateWarnings = [...templates.warnings, ...patterns.warnings];
+}
 
 export function getProjectRootHandle(): FileSystemDirectoryHandle | null {
 	return rootHandle;
@@ -50,7 +60,7 @@ export function clearProject(): void {
 	loadError = null;
 	needsCreate = false;
 	templateWarnings = [];
-	void applyProjectTemplates(null, null);
+	void refreshDerivedProjectAssets(null, null);
 }
 
 /**
@@ -69,8 +79,7 @@ export async function loadProjectFromRoot(
 	const files = await findRootCalmrjFiles(handle);
 	if (files.length === 0) {
 		needsCreate = true;
-		const result = await applyProjectTemplates(handle, null);
-		templateWarnings = result.warnings;
+		await refreshDerivedProjectAssets(handle, null);
 		return 'missing';
 	}
 	if (files.length > 1) {
@@ -89,8 +98,7 @@ export async function loadProjectFromRoot(
 		config = parsed;
 		configFileName = name;
 		needsCreate = false;
-		const result = await applyProjectTemplates(handle, parsed);
-		templateWarnings = result.warnings;
+		await refreshDerivedProjectAssets(handle, parsed);
 		return 'loaded';
 	} catch (e) {
 		loadError = (e as Error).message;
@@ -117,8 +125,7 @@ export async function createProjectFile(
 	configFileName = safeName;
 	needsCreate = false;
 	loadError = null;
-	const result = await applyProjectTemplates(handle, next);
-	templateWarnings = result.warnings;
+	await refreshDerivedProjectAssets(handle, next);
 	return next;
 }
 
@@ -138,8 +145,7 @@ export async function saveProjectConfig(
 		JSON.stringify(next, null, 2) + '\n'
 	);
 	config = next;
-	const result = await applyProjectTemplates(rootHandle, next);
-	templateWarnings = result.warnings;
+	await refreshDerivedProjectAssets(rootHandle, next);
 }
 
 export function setRulesetEnabled(path: string, enabled: boolean): void {
@@ -191,5 +197,20 @@ export function setTemplatesDir(dir: string): void {
 	config = {
 		...config,
 		templates: { dir: trimmed },
+	};
+}
+
+/** Set project-relative patterns folder (R41). Empty string removes the key. */
+export function setPatternsDir(dir: string): void {
+	if (!config) return;
+	const trimmed = dir.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
+	if (!trimmed) {
+		const { patterns: _omit, ...rest } = config;
+		config = rest;
+		return;
+	}
+	config = {
+		...config,
+		patterns: { dir: trimmed },
 	};
 }

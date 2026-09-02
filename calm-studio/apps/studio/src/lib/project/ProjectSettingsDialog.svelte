@@ -5,11 +5,14 @@
 	import {
 		getProjectConfig,
 		getProjectConfigFileName,
+		getProjectRootHandle,
 		saveProjectConfig,
 		setRulesetEnabled,
 		setNeighborSearchRoots,
 		setTemplatesDir,
+		setPatternsDir,
 	} from '$lib/project/projectStore.svelte';
+	import { pickProjectDirectory, pickProjectFile } from '$lib/project/pathPickers';
 
 	interface Props {
 		onclose: () => void;
@@ -20,6 +23,7 @@
 	let newPath = $state('validation/team-rules.json');
 	let newRoot = $state('components');
 	let templatesDir = $state(getProjectConfig()?.templates?.dir ?? '');
+	let patternsDir = $state(getProjectConfig()?.patterns?.dir ?? '');
 	let status = $state<string | null>(null);
 	let saving = $state(false);
 
@@ -53,9 +57,56 @@
 		await persist();
 	}
 
+	async function browseRuleset() {
+		const result = await pickProjectFile(getProjectRootHandle());
+		if ('cancelled' in result) return;
+		if ('error' in result) {
+			status = result.error;
+			return;
+		}
+		newPath = result.path;
+	}
+
+	async function browseSearchRoot() {
+		const result = await pickProjectDirectory(getProjectRootHandle());
+		if ('cancelled' in result) return;
+		if ('error' in result) {
+			status = result.error;
+			return;
+		}
+		newRoot = result.path || '.';
+	}
+
 	async function saveTemplatesDir() {
 		setTemplatesDir(templatesDir);
 		await persist();
+	}
+
+	async function browseTemplatesDir() {
+		const result = await pickProjectDirectory(getProjectRootHandle());
+		if ('cancelled' in result) return;
+		if ('error' in result) {
+			status = result.error;
+			return;
+		}
+		templatesDir = result.path;
+		await saveTemplatesDir();
+	}
+
+	async function savePatternsDir() {
+		setPatternsDir(patternsDir);
+		await persist();
+	}
+
+	async function browsePatternsDir() {
+		const result = await pickProjectDirectory(getProjectRootHandle());
+		if ('cancelled' in result) return;
+		if ('error' in result) {
+			status = result.error;
+			return;
+		}
+		patternsDir = result.path;
+		await savePatternsDir();
 	}
 
 	async function persist() {
@@ -118,6 +169,9 @@
 				</ul>
 				<div class="add-row">
 					<input class="input" bind:value={newPath} placeholder="validation/rules.json" />
+					<button type="button" class="btn" onclick={() => void browseRuleset()} disabled={saving}>
+						Browse…
+					</button>
 					<button type="button" class="btn" onclick={() => void addRuleset()} disabled={!newPath.trim() || saving}>
 						Add
 					</button>
@@ -150,6 +204,9 @@
 				</ul>
 				<div class="add-row">
 					<input class="input" bind:value={newRoot} placeholder="components" />
+					<button type="button" class="btn" onclick={() => void browseSearchRoot()} disabled={saving}>
+						Browse…
+					</button>
 					<button type="button" class="btn" onclick={() => void addSearchRoot()} disabled={!newRoot.trim() || saving}>
 						Add folder
 					</button>
@@ -164,12 +221,33 @@
 				</p>
 				<div class="add-row">
 					<input class="input" bind:value={templatesDir} placeholder="templates" />
+					<button type="button" class="btn" onclick={() => void browseTemplatesDir()} disabled={saving}>
+						Browse…
+					</button>
 					<button
 						type="button"
 						class="btn"
 						onclick={() => void saveTemplatesDir()}
 						disabled={saving}
 					>
+						Save
+					</button>
+				</div>
+			</section>
+
+			<section class="section">
+				<h3 class="section-title">CALM CLI patterns</h3>
+				<p class="hint">
+					Folder of CALM CLI pattern JSON files (relative to the project root). Shown as
+					<strong>Pattern</strong> cards in the template picker and generated via the shared
+					instantiate pipeline.
+				</p>
+				<div class="add-row">
+					<input class="input" bind:value={patternsDir} placeholder="patterns" />
+					<button type="button" class="btn" onclick={() => void browsePatternsDir()} disabled={saving}>
+						Browse…
+					</button>
+					<button type="button" class="btn" onclick={() => void savePatternsDir()} disabled={saving}>
 						Save
 					</button>
 				</div>

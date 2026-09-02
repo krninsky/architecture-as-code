@@ -12,6 +12,7 @@
 		CalmRelationshipType,
 		CalmRelationshipVariant
 	} from '@calmstudio/calm-core';
+	import { getContainerAndNodes } from '@calmstudio/calm-core';
 	import { updateEdgeProperty, getModel } from '$lib/stores/calmModel.svelte';
 	import ControlsList from './ControlsList.svelte';
 	import MetadataForm from './MetadataForm.svelte';
@@ -42,6 +43,7 @@
 		onBeforeFirstEdit,
 		onmutate,
 		onswap,
+		oncontainmentmembers,
 	}: {
 		edge: Edge;
 		/** Called once before the first mutation per selection — used to push undo snapshot. */
@@ -50,6 +52,8 @@
 		onmutate?: () => void;
 		/** Called to swap edge direction (source ↔ target). */
 		onswap?: () => void;
+		/** Replace composed-of / deployed-in member list (R38). */
+		oncontainmentmembers?: (nextNodeIds: string[]) => void;
 	} = $props();
 
 	const ed = $derived(asCalmFlowEdgeData(edge.data as Record<string, unknown>));
@@ -116,6 +120,23 @@
 	);
 	const showProtocol: boolean = $derived(PROTOCOL_TYPES.includes(relType));
 	const canSwapDirection: boolean = $derived(SWAPPABLE_VARIANTS.includes(relType));
+	const isContainmentRel: boolean = $derived(relType === 'composed-of' || relType === 'deployed-in');
+	const calmRelId: string = $derived(String(ed.calmRelId ?? edge.id));
+
+	const memberIds: string[] = $derived.by(() => {
+		if (!isContainmentRel) return [];
+		const rel = getModel().relationships.find((r) => r['unique-id'] === calmRelId);
+		if (!rel) return [edge.target];
+		return getContainerAndNodes(rel)?.nodes ?? [edge.target];
+	});
+
+	const addableNodeIds: string[] = $derived(
+		getModel()
+			.nodes.map((n) => n['unique-id'])
+			.filter((id) => id !== edge.source && !memberIds.includes(id))
+	);
+
+	let addMemberId = $state('');
 
 	let descTimer: ReturnType<typeof setTimeout>;
 	let protocolTimer: ReturnType<typeof setTimeout>;
@@ -180,6 +201,19 @@
 		onswap?.();
 	}
 
+	function removeMember(id: string) {
+		signalFirstEdit();
+		oncontainmentmembers?.(memberIds.filter((m) => m !== id));
+	}
+
+	function addMember() {
+		const id = addMemberId.trim();
+		if (!id || memberIds.includes(id)) return;
+		signalFirstEdit();
+		oncontainmentmembers?.([...memberIds, id]);
+		addMemberId = '';
+	}
+
 	function handleMetadataCommit(next: Record<string, unknown>) {
 		const currentVariant = relType;
 		const sync = resolveVariantSyncFromMetadata(
@@ -215,7 +249,9 @@
 		<!-- unique-id: read-only -->
 		<div class="field">
 			<label class="field-label" for="edge-unique-id">Unique ID</label>
-			<div class="read-only-field" id="edge-unique-id" title={edge.id}>{edge.id}</div>
+			<div class="read-only-field" id="edge-unique-id" title={isContainmentRel ? calmRelId : edge.id}>
+				{isContainmentRel ? calmRelId : edge.id}
+			</div>
 		</div>
 
 		<!-- relationship-type dropdown -->
@@ -290,6 +326,38 @@
 			></textarea>
 		</div>
 
+		{#if isContainmentRel}
+			<div class="field">
+				<label class="field-label" for="edge-container">Container</label>
+				<div class="read-only-field" id="edge-container" title={edge.source}>{edge.source}</div>
+			</div>
+			<div class="field">
+				<span class="field-label">Members (nodes)</span>
+				<ul class="member-list">
+					{#each memberIds as mid (mid)}
+						<li class="member-row">
+							<code>{mid}</code>
+							{#if oncontainmentmembers}
+								<button type="button" class="member-remove" onclick={() => removeMember(mid)} aria-label="Remove {mid}">
+									×
+								</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				{#if oncontainmentmembers && addableNodeIds.length > 0}
+					<div class="member-add">
+						<select class="field-select" bind:value={addMemberId} aria-label="Add node unique-id">
+							<option value="">Add node unique-id</option>
+							{#each addableNodeIds as nid (nid)}
+								<option value={nid}>{nid}</option>
+							{/each}
+						</select>
+						<button type="button" class="swap-btn" onclick={addMember} disabled={!addMemberId}>Add</button>
+					</div>
+				{/if}
+			</div>
+		{:else}
 		<!-- source: read-only -->
 		<div class="field">
 			<label class="field-label" for="edge-source">Source</label>
@@ -301,6 +369,7 @@
 			<label class="field-label" for="edge-dest">Destination</label>
 			<div class="read-only-field" id="edge-dest" title={edge.target}>{edge.target}</div>
 		</div>
+		{/if}
 	</div>
 
 	<!-- Schema-driven relationship metadata (R17) -->
@@ -391,6 +460,33 @@
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
+	}
+
+	.member-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.member-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		font-size: 12px;
+		padding: 2px 0;
+	}
+	.member-remove {
+		border: none;
+		background: transparent;
+		color: #b91c1c;
+		cursor: pointer;
+		font-size: 16px;
+		line-height: 1;
+	}
+	.member-add {
+		display: flex;
+		gap: 8px;
+		margin-top: 6px;
 	}
 
 	.field-label {

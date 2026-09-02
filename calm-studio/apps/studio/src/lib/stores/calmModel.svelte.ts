@@ -18,6 +18,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { CalmArchitecture, CalmInterface, CalmNode, CalmRelationship } from '@calmstudio/calm-core';
 import { flowToCalm } from '$lib/stores/projection';
+import { mergeContainmentRelationships } from '$lib/stores/mergeContainmentRelationships';
 import { ensureSchemaOnFirstElement, mergeArchitectureBody } from '$lib/stores/documentEnvelope';
 
 // ─── Module-level state ───────────────────────────────────────────────────────
@@ -50,16 +51,25 @@ function withMutex(fn: () => void): boolean {
 /** Hint for schema envelope when the first palette node is placed. */
 let lastPlacedNodeType: string | undefined;
 
+/** True when the last applyFromJson merged duplicate 1:1 containment rels (R38). */
+let lastContainmentMergeChanged = false;
+
+export function didMergeContainmentOnLastApply(): boolean {
+	return lastContainmentMergeChanged;
+}
+
 /**
  * Apply a CalmArchitecture from JSON (e.g., from the code editor or file load).
  * Returns true on success, false if a sync is already in progress.
  */
 export function applyFromJson(arch: CalmArchitecture): boolean {
 	return withMutex(() => {
+		const { architecture: merged, changed } = mergeContainmentRelationships(arch);
+		lastContainmentMergeChanged = changed;
 		model = {
-			...arch,
-			nodes: [...arch.nodes],
-			relationships: [...(arch.relationships ?? [])],
+			...merged,
+			nodes: [...merged.nodes],
+			relationships: [...(merged.relationships ?? [])],
 		};
 		lastPlacedNodeType = undefined;
 	});

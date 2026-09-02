@@ -23,6 +23,11 @@ export default defineConfig({
 			// Allow tests to import @calmstudio/calm-core/test-fixtures directly from source.
 			// The package.json exports map only exposes '.', so test-fixtures must be aliased here.
 			'@calmstudio/calm-core/test-fixtures': path.resolve('../../packages/calm-core/test-fixtures/index.ts'),
+			'@finos/calm-shared/generate': path.resolve('../../../shared/src/commands/generate/generate-core.ts'),
+			'@finos/calm-shared/document-loader-types': path.resolve('../../../shared/src/document-loader/types.ts'),
+			'$calm-release': path.resolve('../../../calm/release'),
+			// generate-core → SchemaDirectory → logger imports winston (Node). Stub for the browser.
+			winston: path.resolve('src/lib/shims/winston.ts'),
 		},
 		// CodeMirror uses internal symbols + instanceof checks across @codemirror/state,
 		// @codemirror/view and @codemirror/language. Multiple module copies break those
@@ -43,6 +48,7 @@ export default defineConfig({
 	},
 	optimizeDeps: {
 		include: ['ajv', 'ajv-formats'],
+		exclude: ['winston'],
 	},
 	test: {
 		include: ['src/**/*.test.ts'],

@@ -50,6 +50,8 @@ export interface CalmProjectConfig {
 	neighbors?: CalmProjectNeighborsConfig;
 	/** Optional folder of CALM template JSON files (R33). */
 	templates?: CalmProjectTemplatesConfig;
+	/** Optional folder of CALM CLI pattern JSON files (R41). */
+	patterns?: CalmProjectTemplatesConfig;
 }
 
 export interface NamingResolveContext {

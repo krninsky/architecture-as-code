@@ -5,7 +5,7 @@
 | ---------------------- | ------------------------------------------------------------------------------------------------ |
 | **Owner / DRI**        | TBD                                                                                              |
 | **Status**             | Draft                                                                                            |
-| **Version**            | 0.19                                                                                             |
+| **Version**            | 0.20                                                                                             |
 | **Last updated**       | 2026-09-01                                                                                       |
 | **Target release**     | TBD                                                                                              |
 | **Reviewers**          | eng lead, design                                                                                 |
@@ -13,7 +13,7 @@
 | **Links**              | [BBR.MD](./BBR.MD) · [AGENTS.md](../AGENTS.md) · [CALM 1.2](https://calm.finos.org/release/1.2/) · [IDEA V4](./ideas/IDEA-calmrj-project-and-extract.md) |
 
 
-> **TL;DR** — We will extend CALM Studio with a folder browser panel for CALM files and drag-and-drop references via `detailed-architecture`, **multiple diagrams in tabs** with a JSON editor bound to the active tab, and **visual navigation to referenced diagrams** (glasses icon). We will add **structured** `metadata` **editing** in the properties panel, including field scaffolding per extension schema, and a **read-only mode** for reference nodes with `details.detailed-architecture`. **V3** polishes the file panel (reveal active file, refresh node list on save), adds **Ctrl+drag node duplication** with an optional relationship copy dialog, **focuses the referenced node** after drill-down navigation, and delivers **full diagram layout** — no overlapping boxes plus **obstacle-aware edge routing** on auto-layout, manual placement, and label resize (#16 in R23). **V4** adds a **project file** (`*.calmrj`) for Spectral ruleset selection, directory/naming conventions, and **extract node → separate diagram** (parent becomes a `detailed-architecture` stub). **V5** adds **Find neighbors** (project-wide 1-hop links → add as references + relationships with preserved `unique-id`), **session diagram filter/fog** (focus neighbors or single metadata value), **Save all** dirty tabs, and **VS Code–style tab close** (left / right / all, one summary dirty dialog). **V6** adds **Radial** to the layout menu, **project-folder templates** from `.calmrj`, a **working Docker deploy**, **hidden containment edges** with a container-header shortcut into relationship properties, a **node-type fog mode**, and **Find usage** (reference stubs + relationship endpoints in other files → open diagram). We will fix critical JSON editor, export, and container sizing bugs. Earlier iterations add automatic `$schema` in the JSON header (CALM 1.2 + extension pack), required fields when creating elements, and direction reversal for all relationship types. **BBR V7 is out of scope.**
+> **TL;DR** — We will extend CALM Studio with a folder browser panel for CALM files and drag-and-drop references via `detailed-architecture`, **multiple diagrams in tabs** with a JSON editor bound to the active tab, and **visual navigation to referenced diagrams** (glasses icon). We will add **structured** `metadata` **editing** in the properties panel, including field scaffolding per extension schema, and a **read-only mode** for reference nodes with `details.detailed-architecture`. **V3** polishes the file panel (reveal active file, refresh node list on save), adds **Ctrl+drag node duplication** with an optional relationship copy dialog, **focuses the referenced node** after drill-down navigation, and delivers **full diagram layout** — no overlapping boxes plus **obstacle-aware edge routing** on auto-layout, manual placement, and label resize (#16 in R23). **V4** adds a **project file** (`*.calmrj`) for Spectral ruleset selection, directory/naming conventions, and **extract node → separate diagram** (parent becomes a `detailed-architecture` stub). **V5** adds **Find neighbors** (project-wide 1-hop links → add as references + relationships with preserved `unique-id`), **session diagram filter/fog** (focus neighbors or single metadata value), **Save all** dirty tabs, and **VS Code–style tab close** (left / right / all, one summary dirty dialog). **V6** adds **Radial** to the layout menu, **project-folder templates** from `.calmrj`, a **working Docker deploy**, **hidden containment edges** with a container-header shortcut into relationship properties, a **node-type fog mode**, and **Find usage** (reference stubs + relationship endpoints in other files → open diagram). **V7** merges `composed-of` / `deployed-in` to **one relationship per type per container** (`nodes[]` in properties), uses **Alt+drop / Alt+extract** for containment, adds **file/directory pickers** in project settings, and offers **CALM CLI patterns** in the template picker via the existing `@finos/calm-shared` generate pipeline (not a new generator). We will fix critical JSON editor, export, and container sizing bugs. Earlier iterations add automatic `$schema` in the JSON header (CALM 1.2 + extension pack), required fields when creating elements, and direction reversal for all relationship types. **BBR V8 is out of scope.**
 
 
 
@@ -34,7 +34,7 @@
 
 ## 1. Problem and context
 
-CALM Studio today lets users model architecture in a single file with a palette of node types, but it lacks multi-file project workflows and cross-document node referencing. **The editor supports only one open diagram at a time** — switching between files replaces the window content instead of working in tabs, which complicates navigation in multi-file projects and tracking references. Nodes with `details.detailed-architecture` lack a clear visual indicator and quick navigation to the target diagram. **In V3**, even with the Files panel and tabs, users still lose orientation in large trees (no reveal for the active file), see stale node previews after save, cannot duplicate in-diagram nodes with optional relationship copy, land on a detail diagram without the referenced node in view, and suffer overlapping boxes or edges drawn through nodes after label resize or auto-layout. **In V4**, there is still no project-level config: teams cannot attach folder-scoped Spectral rules on top of core CALM validation, nor encode directory/naming conventions for new diagram files. Splitting a growing node into its own diagram requires manual file creation, path math, and stub wiring. **In V5**, architects cannot discover project-wide neighbors of a selected node and pull them onto the current diagram as references; cannot temporarily fog the canvas to highlight focus neighbors or metadata; lack **Save all** for many dirty tabs; and lack VS Code–style bulk tab close (left / right / all). **In V6**, auto-layout has only layered directions (no Radial); templates are bundled only (FluxNova/OpenGRIS), not loaded from the project; Docker files exist but the documented compose path is not a reliable one-command deploy; containment relationships (`composed-of` / `deployed-in`) are drawn as edges **and** as nested containers, so the canvas is noisy and relationship properties are hard to reach; fog filter has no node-type mode; there is no reverse lookup of where a node is referenced. At the same time, the editor suffers from regressions in the JSON panel (repeated selection, jumping cursor), export omits relationships when nodes are visually nested in containers, and when the type changes to a container the element size no longer matches its visualization.
+CALM Studio today lets users model architecture in a single file with a palette of node types, but it lacks multi-file project workflows and cross-document node referencing. **The editor supports only one open diagram at a time** — switching between files replaces the window content instead of working in tabs, which complicates navigation in multi-file projects and tracking references. Nodes with `details.detailed-architecture` lack a clear visual indicator and quick navigation to the target diagram. **In V3**, even with the Files panel and tabs, users still lose orientation in large trees (no reveal for the active file), see stale node previews after save, cannot duplicate in-diagram nodes with optional relationship copy, land on a detail diagram without the referenced node in view, and suffer overlapping boxes or edges drawn through nodes after label resize or auto-layout. **In V4**, there is still no project-level config: teams cannot attach folder-scoped Spectral rules on top of core CALM validation, nor encode directory/naming conventions for new diagram files. Splitting a growing node into its own diagram requires manual file creation, path math, and stub wiring. **In V5**, architects cannot discover project-wide neighbors of a selected node and pull them onto the current diagram as references; cannot temporarily fog the canvas to highlight focus neighbors or metadata; lack **Save all** for many dirty tabs; and lack VS Code–style bulk tab close (left / right / all). **In V6**, auto-layout has only layered directions (no Radial); templates are bundled only (FluxNova/OpenGRIS), not loaded from the project; Docker files exist but the documented compose path is not a reliable one-command deploy; containment relationships (`composed-of` / `deployed-in`) are drawn as edges **and** as nested containers, so the canvas is noisy and relationship properties are hard to reach; fog filter has no node-type mode; there is no reverse lookup of where a node is referenced. **In V7**, saving a container with several children writes **one CALM relationship per child** instead of one `composed-of`/`deployed-in` with `nodes[]`; nesting is created by plain drag-into with no type choice; project settings paths are typed by hand; CALM CLI **patterns** cannot be used as Studio templates. At the same time, the editor suffers from regressions in the JSON panel (repeated selection, jumping cursor), export omits relationships when nodes are visually nested in containers, and when the type changes to a container the element size no longer matches its visualization.
 
 **Why now:** Users work with real CALM projects (multiple JSON files, cross-file references, enterprise naming like CEngineering), but must switch manually outside the studio and maintain project conventions by hand. Editor and export bugs undermine trust in the tool as the source of truth for CALM 1.2 documents.
 
@@ -74,6 +74,10 @@ CALM Studio today lets users model architecture in a single file with a palette 
 | Container → relationship UI  | Missing — no header icon to load containment relationship into properties                         |
 | Fog by node-type             | Missing — R29 modes are focus neighbors and single metadata value only                            |
 | Find usage                   | Missing — no reverse lookup of reference stubs / relationship endpoints in other files            |
+| Multi-child containment JSON | `flowToCalm` emits one 1:1 rel per child; CALM `nodes[]` not round-tripped                        |
+| Alt+drop containment         | Drag-into without modifier already nests + `composed-of`; no type picker; no Alt extract          |
+| Project path pickers         | Settings fields are free-text paths only                                                          |
+| CLI patterns in picker       | Missing — picker is `_template` architecture JSON only; no `calm generate` / shared instantiate   |
 
 
 
@@ -90,6 +94,7 @@ CALM Studio today lets users model architecture in a single file with a palette 
 - **V4:** Persist project config in `*.calmrj` (Spectral rulesets, directory/naming conventions); **extract** a node into its own diagram file with a confirm dialog and parent stub reference.
 - **V5:** Discover **project-wide 1-hop neighbors** of the selected node and add them as references (plus relationships with preserved `unique-id`); **session-only** canvas filter/fog by focus neighbors or a single metadata value; **Save all** dirty tabs; **bulk tab close** (left / right / all) with one summary dirty dialog.
 - **V6:** Offer **Radial** auto-layout; load **project templates** from a folder in `.calmrj` (merged with bundled); ship a **documented working Docker image**; hide **containment edges** and open their properties from a **container header icon**; add **node-type** as a third fog-filter mode; **Find usage** of the selected node in other project files.
+- **V7:** One `composed-of` and one `deployed-in` per container (`nodes[]`); **Alt+drop** to nest / **Alt+extract** to remove; filesystem pickers for project path fields; **CALM patterns** in the template picker generated via existing shared `instantiate` (not a new engine).
 
 **Non-goals**
 
@@ -110,7 +115,11 @@ CALM Studio today lets users model architecture in a single file with a palette 
 - **Multi-hop neighbor discovery** or graph path search — V5 is 1 hop only (#24).
 - **Multi-select metadata filter values** — V5 allows a single value (#26).
 - **Moving or deleting** the source relationship from its home file when adding a neighbor — V5 **copies** the relationship into the current diagram with the same `unique-id` (#23).
-- **BBR V7** — unify layout with CALM Hub; split extensions into per-extension definitions reusable across Hub / VS Code / CLI.
+- **BBR V8** — unify layout with CALM Hub; split extensions into per-extension definitions reusable across Hub / VS Code / CLI.
+- **Spawning `calm` CLI** (child process) from the browser Studio — V7 **imports** generate from `@finos/calm-shared` (`instantiate` / `flattenAllOf` / `selectChoices`); do not reimplement instantiate (#42).
+- **Merging `composed-of` and `deployed-in` into one relationship** — still **at most one of each type** per container, never a mixed type (#35).
+- **Containment without Alt** — V7 does **not** create or remove `composed-of` / `deployed-in` (or `parentId`) on plain drag (#37).
+- **File pickers for `naming.patterns` templates** (`{{name}}` tokens) — those stay text; pickers cover rulesets, search roots, `templates.dir`, `patterns.dir` (#41).
 - **Replacing bundled templates** when a project folder is set — V6 **merges**; same `_template.id` overwrites the bundled entry (#30).
 - **CALM Hub in the Studio Docker stack**, image publish to GHCR/CI — V6 is Studio SPA image + docs only (#31).
 - **Mounting a host architecture repo into the container as the project folder** — File System Access stays in the **browser**; Docker only serves the SPA (#31).
@@ -152,6 +161,10 @@ CALM Studio today lets users model architecture in a single file with a palette 
 | Containment shown twice (edge + nest)          | Both visible            | Nesting only; header icon opens relationship props  | v6   |
 | Fog by node-type                               | Neighbors / metadata    | Third mode; multi-select types on diagram           | v6   |
 | Find where a node is used                      | Manual tree browse      | Dialog of stubs + rel endpoints; open + focus       | v6   |
+| One composed-of / deployed-in per container    | One rel per child       | Single rel with `nodes[]`; properties edit members  | v7   |
+| Alt+drop / Alt+extract containment             | Plain drag-into         | Alt required; first drop picks type                 | v7   |
+| Pick project paths from disk                   | Type relative paths     | Directory picker for dirs; file picker for files    | v7   |
+| Generate from CALM CLI pattern                 | `_template` JSON only   | Pattern cards in picker; shared instantiate; new tab| v7   |
 
 
 
@@ -189,6 +202,10 @@ CALM Studio today lets users model architecture in a single file with a palette 
 25. **UC-25 — Containment without extra edges:** Nested nodes show as containers only; `composed-of` / `deployed-in` lines are hidden. User clicks the header icon → properties show that containment relationship (menu if more than one).
 26. **UC-26 — Fog by node type:** User sets filter mode **Node type**, multi-selects types present on the diagram → matching nodes stay clear; others and their edges fog. Independent of neighbors/metadata modes.
 27. **UC-27 — Find usage:** User selects a node → **Find usage** → dialog lists reference stubs and relationship endpoints in **other** project files → Open activates/opens the diagram and focuses the hit.
+28. **UC-28 — Merged containment:** User has several children in a container → JSON has **one** `composed-of` (and/or **one** `deployed-in`) with `nodes: […]`. Properties lists members; user can remove a child from the list.
+29. **UC-29 — Alt containment:** User holds **Alt**, drops a node onto another → if that target has no containment rel, a type picker (composed-of / deployed-in); if one type exists, the child is appended to `nodes[]`; if both exist, the session **last-used** type for that container is used. **Alt+drag out** of a container removes the child from that relationship and un-nests. Plain drag does not change containment.
+30. **UC-30 — Path pickers:** In Project settings, user picks a folder (search roots, `templates.dir`, `patterns.dir`) or a file (ruleset path) via the system picker; stored path is project-relative.
+31. **UC-31 — Pattern as template:** User opens a project with `.calmrj` `patterns.dir` → Template picker lists pattern files as cards. Selecting one runs the **existing** generate pipeline (options dialog if the pattern has choices) and opens a **new untitled** tab with the architecture.
 
 **Not for:** Users outside officially supported browsers (**Chrome**, **Safari**). Firefox, Edge, and older versions without File System Access API — file panel unavailable, rest of studio may work with limitations.
 
@@ -490,7 +507,8 @@ When the user opens a project folder (R1), Studio looks for **exactly one** `*.c
 1. Enabled **Spectral** ruleset paths (relative to project root).
 2. **Directory structure + naming conventions** used by Extract (R27).
 3. **Templates folder** (`templates.dir`) used by the template picker (R33).
-4. Future diagram-related settings (placeholder object allowed; unused keys ignored with forward compatibility).
+4. **Patterns folder** (`patterns.dir`) used to list CALM CLI patterns in the same picker (R41).
+5. Future diagram-related settings (placeholder object allowed; unused keys ignored with forward compatibility).
 
 ```json
 {
@@ -524,6 +542,7 @@ When the user opens a project folder (R1), Studio looks for **exactly one** `*.c
     }
   },
   "templates": { "dir": "templates" },
+  "patterns": { "dir": "patterns" },
   "diagrams": {}
 }
 ```
@@ -755,6 +774,68 @@ Dialog lists file path, kind (`node` / `relationship`), node `name` or relations
 
 
 
+### 4.27 Merged containment relationships (P1 — BBR V7, #35)
+
+CALM 1.2 already models `composed-of` / `deployed-in` as **one relationship** with `container` + `nodes[]`. Studio today expands that to one canvas edge per child and `flowToCalm` writes **one relationship per child**. V7 round-trips the canonical shape.
+
+**Invariant:** for a given container `unique-id`, at most **one** `composed-of` and at most **one** `deployed-in` in the architecture JSON.
+
+- **On load / save:** multiple 1:1 relationships of the same variant sharing a container are **merged**. Keep the **first** `unique-id` (document order); union `nodes[]`; keep description/metadata/controls from that first relationship. Extra relationship ids are dropped (diagram becomes dirty if the file changed).
+- **On canvas:** hidden edges (R35) may still exist 1:1 internally; persist via `flowToCalm` **must** emit the merged `nodes[]` form (use `data.calmRelId`).
+- **Properties (R38):** for `composed-of` / `deployed-in`, show **container** and an editable **member list** (`nodes[]`) — add/remove child unique-ids. Removing the last member **deletes** that relationship and un-nests remaining visual children. Do not present this as `connects` source/destination.
+- Header icon (R35): still 1 rel → properties, 2 rels (`composed-of` + `deployed-in`) → menu.
+
+
+
+### 4.28 Alt+drop / Alt+extract containment (P1 — BBR V7, #36, #37)
+
+**Alt (Option on macOS) is required** to create or remove containment JSON and `parentId`. Plain drag does not nest into a container and does not add/remove `composed-of` / `deployed-in`.
+
+**Alt+drop** node A onto node B (B becomes container):
+
+| Existing containment on B | Action |
+| --- | --- |
+| None | Modal: **Composed of** / **Deployed in**. Creates one relationship (`nodes: [A]`) + `parentId`. Records last-used type for B. |
+| Exactly one variant | Append A to that relationship’s `nodes[]` (idempotent if already listed) + nest. |
+| Both variants | Append to the session **last-used** variant for B. If none recorded this session, show the same type picker. |
+
+Last-used is **in-memory per container `unique-id`**, not written to `.calmrj`.
+
+**Alt+drag out** of a container: remove A from **every** containment relationship of that parent that lists A. If a relationship’s `nodes[]` becomes empty, delete that relationship. Clear `parentId`. Marks dirty.
+
+Do not change R21 Ctrl+drag duplicate (Ctrl is not Alt). Dropping a **copy** inside a container still nests the copy (#17): no containment rel on the target → same type picker as first Alt+drop; one variant → append to `nodes[]`; both → last-used (else picker).
+
+
+
+### 4.29 Project settings path pickers (P1 — BBR V7, #41)
+
+In Project settings, path fields are not typed only as text:
+
+| Field | Picker |
+| --- | --- |
+| Spectral ruleset `path` | **File** picker (`showOpenFilePicker`); store project-relative path |
+| `neighbors.searchRoots` | **Directory** picker |
+| `templates.dir` | **Directory** picker |
+| `patterns.dir` | **Directory** picker |
+
+If the chosen handle is **outside** the open project folder → error, do not write. User may still edit the text field. `naming.patterns.dir` / `.file` stay text (`{{name}}` tokens).
+
+
+
+### 4.30 CALM CLI patterns in the template picker (P1 — BBR V7, #38–#40, #42)
+
+`.calmrj` optional `patterns.dir` (project-relative), **separate** from `templates.dir`. Recursively scan `.json` that look like CALM **patterns** (JSON Schema document: `$schema` / `$id`, `type: object`, `properties.nodes` with `prefixItems` / `const` — **not** `_template` architecture JSON). Invalid files skipped with warning (same as R33).
+
+Picker shows pattern cards alongside bundled/project `_template` cards (distinct badge **Pattern**). Selecting a pattern:
+
+1. If the pattern has generate **options** / choices → **dialog** equivalent to interactive `calm generate` (`CalmChoice`).
+2. Run generate **in memory** by **importing** `@finos/calm-shared` (`flattenAllOf`, `selectChoices`, `instantiate`). Do **not** spawn `calm` CLI. Do **not** copy a new instantiate implementation. `runGenerate` writes files via Node `fs` — wrap instantiate for the browser; use bundled SchemaDirectory / CALM meta schemas already available to Studio.
+3. Open a **new untitled tab** with the generated architecture (never overwrite the current tab). User saves via Save As.
+
+Missing/empty `patterns.dir` → no pattern cards (bundled `_template` templates unchanged).
+
+
+
 ```json
 {
   "unique-id": "ref-api-gateway",
@@ -800,7 +881,7 @@ flowchart TB
   Canvas -->|double-click glasses| OpenRef[Open reference]
   OpenRef --> TabBar
 
-  Canvas -->|makeContainment + edge| Model
+  Canvas -->|Alt+drop containment| Model
   Model --> Export[export.ts]
 ```
 
@@ -900,7 +981,19 @@ flowchart TB
 
 
 
-### Iteration 7 — P2
+### Iteration 7 — P1 (BBR V7 — merged containment, Alt gestures, path pickers, CLI patterns)
+
+
+| ID  | User story                                                                                                      | Priority | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Status |
+| --- | --------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| R38 | As an architect I want one composed-of and one deployed-in per container, with properties editing the member list. | P1       | - [ ] At most **one** `composed-of` and **one** `deployed-in` per container `unique-id` (#35) - [ ] Load **and** save merge same-type 1:1 rels: keep first `unique-id` (document order); union `nodes[]`; drop extras (dirty if file changed) - [ ] `flowToCalm` emits `container` + `nodes[]`, not one rel per child - [ ] Properties: container + editable member list (add/remove unique-ids); last member removed → delete rel + un-nest - [ ] Do **not** mix types into one relationship - [ ] Header icon (R35): 1 rel → properties; both types → menu | Open   |
+| R39 | As an architect I want Alt+drop to nest a node and Alt+extract to remove it from composed-of / deployed-in.     | P1       | - [ ] **Alt required** to create or remove containment JSON and `parentId`; plain drag does neither (#37) - [ ] Alt+drop onto node with **no** containment rel → type picker Composed of / Deployed in; create rel `nodes: [child]` + nest; record last-used - [ ] Exactly one variant on target → append child to that `nodes[]` (idempotent) + nest - [ ] Both variants → append to session **last-used** for that container; none this session → same picker (#36) - [ ] Last-used is in-memory `Map<containerId, variant>`, not `.calmrj` - [ ] Alt+drag out → remove child from every parent rel that lists it; empty `nodes[]` → delete that rel; clear `parentId`; dirty - [ ] R21 Ctrl+drag unchanged (Ctrl ≠ Alt); copy dropped in container still nests per #17 using picker / append / last-used | Open   |
+| R40 | As an architect I want to pick directories and files from disk in Project settings instead of typing paths.     | P1       | - [ ] Directory picker: `neighbors.searchRoots`, `templates.dir`, `patterns.dir` (#41) - [ ] File picker: Spectral ruleset `path` (`showOpenFilePicker`) - [ ] Store **project-relative** paths - [ ] Handle outside project folder → error, do not write - [ ] Text field still editable - [ ] `naming.patterns` dir/file templates stay text (`{{name}}`) | Open   |
+| R41 | As an architect I want CALM CLI patterns from the project listed as templates and generated with the existing engine. | P1       | - [ ] `.calmrj` optional `patterns.dir` (project-relative), **separate** from `templates.dir` (#38) - [ ] Recursive scan: JSON Schema patterns (`$schema`/`$id`, `properties.nodes` prefixItems/const) — **not** `_template` files - [ ] Invalid skipped with warning; missing/empty dir → no pattern cards - [ ] Distinct **Pattern** badge in picker - [ ] Options/choices → dialog equivalent to `calm generate` (`CalmChoice`) (#40) - [ ] Generate **in memory** by importing `@finos/calm-shared` (`flattenAllOf`, `selectChoices`, `instantiate`); do **not** spawn CLI; do **not** reimplement instantiate (#42) - [ ] Result opens a **new untitled** tab; never overwrite current tab (#39) | Open   |
+
+
+
+### Iteration 8 — P2
 
 
 | ID  | User story                                             | Priority | Acceptance criteria                                   | Status |
@@ -918,6 +1011,9 @@ flowchart TB
 - The same relationship `unique-id` may appear in more than one diagram file when neighbors are imported (intentional copy for local visibility; source of truth remains the home file until a future sync story).
 - Docker Studio is a static nginx SPA; File System Access runs in the host browser, not against the container filesystem (#31).
 - Project template files use the same `_template` envelope as bundled templates; non-conforming JSON in `templates.dir` is ignored with a warning (#30).
+- CALM 1.2 `composed-of` / `deployed-in` already use `container` + `nodes[]`; Studio’s 1:1 canvas edges are a projection, not the persisted shape (#35).
+- Browser Studio cannot spawn `calm` CLI or call `runGenerate` (Node `fs.writeFileSync`); generation wraps `instantiate` in memory with bundled SchemaDirectory / CALM meta schemas (#42).
+- Last-used containment type is session memory only; a new browser session with both variants on a container shows the type picker again (#36).
 
 
 
@@ -1021,6 +1117,75 @@ flowchart TB
 
 
 
+### Containment type picker (V7, R39)
+
+```
+┌─ Containment type ────────────────────┐
+│ Nest “Auth Service” in “Platform”?    │
+│                                       │
+│ ( ) Composed of                       │
+│ ( ) Deployed in                       │
+│                                       │
+│              [Cancel]  [OK]           │
+└───────────────────────────────────────┘
+```
+
+- Shown on **first** Alt+drop onto a node with no containment rel, or when **both** variants exist and there is no session last-used for that container.
+- Cancel leaves diagram unchanged (no `parentId`, no relationship).
+
+
+
+### Containment properties — member list (V7, R38)
+
+```
+┌─ Relationship: composed-of ───────────┐
+│ unique-id: platform-composed (ro)     │
+│ container: platform                   │
+├─ Members (nodes) ─────────────────────┤
+│  • auth-service                   [×] │
+│  • user-db                        [×] │
+│  [+ Add node unique-id ▼]             │
+└───────────────────────────────────────┘
+```
+
+- Not `connects` source/destination. Removing the last member deletes the relationship and un-nests remaining visual children.
+- Swap (R12) still swaps `container` with the whole `nodes[]` list.
+
+
+
+### Project settings path pickers (V7, R40)
+
+```
+┌─ Project settings ────────────────────────────────────┐
+│ Ruleset path: [validation/team-rules.yaml] [Browse…]  │  ← file picker
+│ Search roots: [architectures]              [Browse…]  │  ← directory
+│ Templates:    [templates]                  [Browse…]  │  ← directory
+│ Patterns:     [patterns]                   [Browse…]  │  ← directory
+└───────────────────────────────────────────────────────┘
+```
+
+- Stored value is project-relative. Outside project → error, no write.
+- `naming.patterns` templates stay text (`{{name}}`).
+
+
+
+### Pattern generate (V7, R41)
+
+```
+┌─ Generate from pattern ───────────────────────────────┐
+│ Pattern: trades-api                                   │
+│ Options (CalmChoice) — same as `calm generate`        │
+│   [choice fields…]                                    │
+│                                                       │
+│                         [Cancel]  [Generate]          │
+└───────────────────────────────────────────────────────┘
+```
+
+- Template picker shows pattern cards with a **Pattern** badge next to `_template` cards.
+- Generate uses imported `@finos/calm-shared` instantiate (not CLI spawn). Result → **new untitled** tab.
+
+
+
 ### Ctrl+drag duplicate modal (V3, R21)
 
 ```
@@ -1084,6 +1249,9 @@ flowchart TB
 | Layout dropdown        | Top to Bottom / Left to Right / Hierarchical / **Radial** (R32) |
 | **Find usage**         | Toolbar + node context menu (R37)                    |
 | Container header icon  | Load hidden containment relationship into properties (R35) |
+| **Alt+drop** on node   | Nest into target; type picker / append / last-used (R39) |
+| **Alt+drag out**       | Un-nest; remove child from containment `nodes[]` (R39) |
+| Template picker        | Bundled + project `_template` + **Pattern** cards from `patterns.dir` (R33, R41) |
 
 
 
@@ -1194,11 +1362,15 @@ TBD — Figma link after review.
 | **Containment UI (V6)**        | `projection.ts` / canvas edges, container node header, `EdgeProperties`          | Hide `composed-of`/`deployed-in` lines; header icon → properties (#32, R35)                     |
 | **Node-type fog (V6)**         | canvas/toolbar filter (R29 control)                                              | Third independent mode; multi-select types on diagram (#33, R36)                                |
 | **Find usage (V6)**            | `apps/studio/src/lib/usage/` (new), reuse project scan                           | Stubs + rel endpoints excl. active file; open + focus (#34, R37)                                |
+| **Merged containment (V7)**    | `projection.ts` (`flowToCalm` / `calmToFlow`), `EdgeProperties`                  | Merge 1:1 → `nodes[]` on load/save; member-list properties (#35, R38)                           |
+| **Alt containment (V7)**       | `CalmCanvas.svelte`, `containment.ts`                                            | Alt-only nest/un-nest; type picker; last-used map (#36, #37, R39)                               |
+| **Path pickers (V7)**          | Project settings UI, File System Access                                          | Directory/file pickers; project-relative; reject outside (#41, R40)                             |
+| **CLI patterns (V7)**          | Template picker, `.calmrj` `patterns.dir`, wrap `@finos/calm-shared` instantiate | Pattern cards; choices dialog; in-memory generate; new untitled tab (#38–#40, #42, R41)         |
 | **Tab manager (new)**          | `apps/studio/src/lib/tabs/`                                                    | TabBar, per-tab model/canvas state, FIFO limit 10, close/evict guards                           |
 | Layout                         | `apps/studio/src/routes/+page.svelte`                                          | Palette/Files toggle, TabBar, active tab → canvas + JSON                                        |
 | JSON sync                      | `apps/studio/src/lib/editor/CodePanel.svelte`, `useJsonSync.ts`                | Fix selection + cursor; bind to active tab                                                      |
 | **Reference UI**               | `apps/studio/src/lib/canvas/nodes/*.svelte`, `projection.ts`                   | Glasses icon, `isReference`, navigation to `detailed-architecture`                              |
-| Containment                    | `apps/studio/src/lib/canvas/containment.ts`, `CalmCanvas.svelte`               | Edge creation + sizing                                                                          |
+| Containment                    | `apps/studio/src/lib/canvas/containment.ts`, `CalmCanvas.svelte`               | Alt+drop / Alt+extract; sizing; no nest on plain drag (R39)                                     |
 | Export                         | `apps/studio/src/lib/io/export.ts`, `exportImagePrep.ts`                       | CALM round-trip; SVG/PNG capture; **do not restrict** `includeStyleProperties` in html-to-image |
 | Model merge (export)           | `apps/studio/src/lib/stores/calmModel.svelte.ts`, `projection.ts`              | `buildPersistedArchitecture`, `getExportJson`, `flowToCalm` / `calmToFlow`                      |
 | Model store (P1)               | `apps/studio/src/lib/stores/calmModel.svelte.ts`                               | Document envelope (`$schema`)                                                                   |
@@ -1531,6 +1703,12 @@ Extend / add:
 - `apps/studio/src/tests/canvas/containerRelIcon.test.ts` — new (1 rel select; 2+ menu) (V6)
 - `apps/studio/src/tests/filter/nodeTypeFog.test.ts` — new (third mode, multi-select types, edge fog) (V6)
 - `apps/studio/src/tests/usage/findUsage.test.ts` — new (stubs + rel endpoints, excl. active, open focus) (V6)
+- `apps/studio/src/tests/containment/mergeRelationships.test.ts` — new (same-type merge, keep first id, union nodes[], no mixed types) (V7)
+- `apps/studio/src/tests/containment/flowToCalmNodesArray.test.ts` — new (`flowToCalm` emits one rel with `nodes[]`) (V7)
+- `apps/studio/src/tests/canvas/altContainment.test.ts` — new (Alt nest/un-nest; picker; last-used; plain drag no-op) (V7)
+- `apps/studio/src/tests/project/pathPickers.test.ts` — new (relative path; reject outside project) (V7)
+- `apps/studio/src/tests/templates/patternCards.test.ts` — new (scan `patterns.dir`; skip `_template`; skip invalid) (V7)
+- `apps/studio/src/tests/templates/generateFromPattern.test.ts` — new (wrap instantiate in memory; new untitled tab; no CLI spawn) (V7)
 - `components/EdgeProperties.test.ts` — swap direction (P1)
 - `components/MetadataForm.test.ts` — schema-driven fields, enum/required (P1)
 - `reference-readonly.test.ts` — properties locked when `detailed-architecture` set (P1)
@@ -1538,6 +1716,20 @@ Extend / add:
 
 
 ## 8. Release criteria and rollout
+
+
+
+### Definition of Done — iteration 7 (P1, BBR V7)
+
+- [ ] All acceptance criteria R38–R41 met
+- [ ] Unit tests for merge/`nodes[]` round-trip, Alt nest/un-nest, path pickers, pattern scan + in-memory generate
+- [ ] Manual smoke: container with 3 children → save JSON has one `composed-of` with `nodes` length 3; properties member list matches
+- [ ] Manual smoke: load file with two 1:1 `composed-of` on same container → merged; extra `unique-id` dropped
+- [ ] Manual smoke: Alt+drop first child → type picker; second child of same type → appended, no picker; both types → last-used
+- [ ] Manual smoke: plain drag onto node does **not** nest; Alt+drag out removes from `nodes[]` and un-nests
+- [ ] Manual smoke: Project settings Browse for `templates.dir` / ruleset file → project-relative path; pick outside project → error
+- [ ] Manual smoke: `patterns.dir` with a CLI pattern → Pattern card → options dialog if needed → new untitled tab; current tab unchanged
+- [ ] `npm run test --workspace=@calmstudio/studio` passes
 
 
 
@@ -1662,8 +1854,17 @@ Extend / add:
 | 32  | ~~Containment edge hiding and property access~~                              | —        | PM     | **Resolved** — hide `composed-of` and `deployed-in`; header icon; 2+ → menu (#32)                            |
 | 33  | ~~Node-type filter vs existing fog modes~~                                   | —        | PM     | **Resolved** — third independent mode; multi-select types on diagram (#33)                                   |
 | 34  | ~~Find usage hit definition~~                                                | —        | PM     | **Resolved** — stubs (id + `detailed-architecture`) **and** relationship endpoints in other files (#34)      |
-| 35  | Docker compose context mismatch (`Dockerfile.static` vs monorepo `Dockerfile`) | Medium | eng    | Open — R34 must pick one working documented path                                                             |
-| 36  | ELK radial quality on nested containers                                      | Low    | eng    | Open — keep `parentId`; accept ELK default if nested radial is poor                                          |
+| 35  | ~~Merge composed-of / deployed-in on the same container~~                    | —        | PM     | **Resolved** — max one of each type; merge 1:1 on load/draw; keep first `unique-id`; union `nodes[]` (#35)  |
+| 36  | ~~Alt+drop when both containment types exist~~                               | —        | PM     | **Resolved** — append to session last-used for that container; else type picker (#36)                       |
+| 37  | ~~Alt vs plain drag for containment~~                                        | —        | PM     | **Resolved** — Alt required to nest/un-nest; plain drag does neither (#37)                                   |
+| 38  | ~~Where CLI patterns are configured~~                                        | —        | PM     | **Resolved** — `.calmrj` `patterns.dir`, separate from `templates.dir` (#38)                                 |
+| 39  | ~~Where generated architecture opens~~                                       | —        | PM     | **Resolved** — always a new untitled tab (#39)                                                               |
+| 40  | ~~Pattern generate options UX~~                                              | —        | PM     | **Resolved** — dialog with the same choices as `calm generate` (#40)                                         |
+| 41  | ~~Which settings fields get filesystem pickers~~                             | —        | PM     | **Resolved** — dirs: search roots, `templates.dir`, `patterns.dir`; files: ruleset paths; not naming tokens (#41) |
+| 42  | ~~Generate engine: CLI spawn vs import~~                                     | —        | PM     | **Resolved** — import `@finos/calm-shared` instantiate in memory; do not spawn CLI; do not reimplement (#42) |
+| 43  | Docker compose context mismatch (`Dockerfile.static` vs monorepo `Dockerfile`) | Medium | eng    | Open — R34 must pick one working documented path                                                             |
+| 44  | ELK radial quality on nested containers                                      | Low    | eng    | Open — keep `parentId`; accept ELK default if nested radial is poor                                          |
+| 45  | Browser wrap of `runGenerate` (Node `fs`) vs public `instantiate` API        | Medium | eng    | Open — R41 must use exported shared functions; if only `runGenerate` writes disk, wrap instantiate only      |
 
 
 
@@ -1690,7 +1891,7 @@ Extend / add:
 | Reveal in tree          | Scroll Files panel to active tab's project file (R19)                        |
 | Relationship clone      | In-file only; rewire endpoints to new `unique-id` (R21)                      |
 | Obstacle router         | Orthogonal path around node bboxes; shared by all edge components (R23, #16) |
-| `.calmrj` / project file | JSON project config at folder root — rulesets, naming, templates folder, future diagram settings (R24, R33) |
+| `.calmrj` / project file | JSON project config at folder root — rulesets, naming, `templates.dir`, `patterns.dir` (R24, R33, R41) |
 | Extract to diagram      | Move node subgraph to new file; parent becomes `detailed-architecture` stub (R27) |
 | Naming profile          | Template map `node-type` → dir/file; default `cengineering-archimate` (R26) |
 | Find neighbors          | Project-wide 1-hop peers of selected node; add as R4 refs + copy rels (R28) |
@@ -1704,6 +1905,11 @@ Extend / add:
 | Container rel icon      | Header control to load containment relationship into properties (R35)       |
 | Node-type fog           | Third independent R29 mode; multi-select types (R36)                        |
 | Find usage              | Reverse lookup of stubs + relationship endpoints in other files (R37)       |
+| Merged containment      | Max one `composed-of` and one `deployed-in` per container; `nodes[]` (R38)  |
+| Alt+drop / Alt+extract  | Alt nests or un-nests; first drop picks type; append to existing (R39)      |
+| Last-used containment   | Session `Map<containerId, variant>`; not persisted (R39, #36)               |
+| Path picker             | File/directory picker in Project settings; project-relative path (R40)      |
+| CALM pattern            | CLI JSON Schema pattern in `patterns.dir`; generate via shared instantiate (R41) |
 
 
 
@@ -1732,7 +1938,11 @@ Extend / add:
 21. **V6 containment UI** (R35) — hide lines; header icon → properties
 22. **V6 node-type fog** (R36) — third independent filter mode
 23. **V6 find usage** (R37) — stubs + rel endpoints; open + focus
-24. **P2 desktop / watch** (R13, R14)
+24. **V7 merge containment** (R38) — `nodes[]` round-trip + member-list properties
+25. **V7 Alt gestures** (R39) — Alt+drop / Alt+extract; type picker; last-used
+26. **V7 path pickers** (R40) — directory/file pickers in Project settings
+27. **V7 CLI patterns** (R41) — `patterns.dir` cards + in-memory instantiate
+28. **P2 desktop / watch** (R13, R14)
 
 
 
@@ -1752,6 +1962,11 @@ Extend / add:
 - **R35 / #32:** hide containment **edges** only — do not delete `composed-of` / `deployed-in` from the model.
 - **R36 / #33:** node-type fog is a separate mode — do not AND it with focus-neighbors or metadata.
 - **R37 / #34:** find usage is read-only; do not copy or rewrite other files.
+- **R38 / #35:** persist at most one `composed-of` and one `deployed-in` per container; merge 1:1 children into `nodes[]`; do not mix types.
+- **R39 / #37:** do not nest or un-nest on plain drag — Alt is required. Last-used type is session memory only (#36).
+- **R40 / #41:** pickers only for search roots, `templates.dir`, `patterns.dir`, and ruleset files; do not add pickers for `naming.patterns` tokens.
+- **R41 / #42:** import `@finos/calm-shared` (`flattenAllOf`, `selectChoices`, `instantiate`); do **not** spawn `calm` CLI; do **not** reimplement instantiate. Open a new untitled tab (#39).
+- **R13 / R14:** still P2 — do not implement Tauri/watch in Iteration 7.
 
 
 
@@ -1779,6 +1994,7 @@ Extend / add:
 | 2026-07-21 | 0.17    | stakeholder      | **BBR V4 (lines 26–30):** R24–R27 `.calmrj`, Spectral rulesets, naming profile, extract-to-diagram; R13–R14 → Iteration 5; decisions #19–#22             |
 | 2026-07-26 | 0.18    | stakeholder      | **BBR V5 (lines 48–55):** R28–R31 find neighbors, diagram fog, Save all, bulk tab close; R13–R14 → Iteration 6; decisions #23–#28                        |
 | 2026-09-01 | 0.19    | stakeholder      | **BBR V6 (lines 58–64):** R32–R37 radial, project templates, Docker, hidden containment + header icon, node-type fog, find usage; V7 ignored; R13–R14 → Iteration 7; decisions #29–#34 |
+| 2026-09-01 | 0.20    | stakeholder      | **BBR V7 (lines 65–70):** R38–R41 merged containment `nodes[]`, Alt+drop/extract, path pickers, CLI patterns via shared instantiate; V8 ignored; R13–R14 → Iteration 8; decisions #35–#42 |
 
 
 
@@ -1896,6 +2112,26 @@ Extend / add:
 | Node-type fog                    | Third **independent** mode; multi-select types present on the diagram (#33)                                 |
 | Find usage hits                  | Reference stubs **and** relationship endpoints in **other** files; open + focus (#34)                       |
 | BBR V7                           | Out of scope for this revision                                                                              |
-| Iteration priority               | V6 = Iteration 6 (P1, R32–R37); Tauri/watch R13–R14 = Iteration 7                                           |
+| Iteration priority               | V6 = Iteration 6 (P1, R32–R37); Tauri/watch R13–R14 = Iteration 8 (after V7)                                |
+
+
+
+### Session decisions (2026-09-01, BBR V7)
+
+
+| Decision                         | Choice                                                                                                      |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Merge when                       | Always **max 1** `composed-of` and **max 1** `deployed-in` per container; merge 1:1 on load/draw (#35)     |
+| Merge identity                   | Keep first `unique-id` (document order); union `nodes[]`; do **not** mix types (#35)                        |
+| Alt+drop, both types exist       | Append to session **last-used** type for that container; no last-used → type picker (#36)                  |
+| Alt vs plain drag                | **Alt required** to create/remove containment (`parentId` + JSON); plain drag does neither (#37)            |
+| Pattern source                   | New `.calmrj` key **`patterns.dir`**, separate from `templates.dir` (#38)                                   |
+| Generate UX                      | Always a **new untitled tab** (#39)                                                                         |
+| Pattern options                  | **Dialog** with the same choices as `calm generate` (#40)                                                   |
+| Settings pickers                 | Directory: search roots, `templates.dir`, `patterns.dir`; file: ruleset paths; not `naming.patterns` (#41) |
+| Path storage                     | Project-relative; outside project → error (#41)                                                             |
+| Generate engine                  | **Import** `@finos/calm-shared` (`instantiate`, `flattenAllOf`, `selectChoices`); no CLI spawn (#42)        |
+| BBR V8                           | Out of scope for this revision                                                                              |
+| Iteration priority               | V7 = Iteration 7 (P1, R38–R41); Tauri/watch R13–R14 = Iteration 8                                           |
 
 

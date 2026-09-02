@@ -1,5 +1,4 @@
 import { CALM_META_SCHEMA_DIRECTORY } from '../consts';
-import { SchemaDirectory } from '../schema-directory';
 import { CalmHubDocumentLoader } from './calmhub-document-loader';
 import { FileSystemDocumentLoader } from './file-system-document-loader';
 import { DirectUrlDocumentLoader } from './direct-url-document-loader';
@@ -7,19 +6,11 @@ import { MultiStrategyDocumentLoader } from './multi-strategy-document-loader';
 import { MappedDocumentLoader } from './mapped-document-loader';
 import { WorkspaceDocumentLoader } from './workspace-document-loader';
 import { AuthPlugin } from '..';
-import type { CalmDocumentType } from '@finos/calm-models/types';
 
 export const CALM_HUB_PROTOS = ['http:', 'https:', 'calm:'];
-
-export interface DocumentLoader {
-    initialise(schemaDirectory: SchemaDirectory): Promise<void>;
-    loadMissingDocument(documentId: string, type: CalmDocumentType): Promise<object>;
-    /**
-     * Resolve a reference (URL or relative path) to an absolute local file path if possible.
-     * Returns undefined if the loader cannot resolve it to a local file.
-     */
-    resolvePath(reference: string): string | undefined;
-}
+export type { DocumentLoader } from './types.js';
+export { DocumentLoadError } from './types.js';
+import { DocumentLoadError, type DocumentLoader } from './types.js';
 
 export type DocumentLoaderOptions = {
     calmHubUrl?: string;
@@ -85,38 +76,5 @@ export function assertJsonObject(data: unknown, source: string): asserts data is
             message: `Expected a JSON object from ${source} but received: ${kind}`,
             recoverable: false
         });
-    }
-}
-
-type ErrorName = 'OPERATION_NOT_IMPLEMENTED' | 'UNKNOWN';
-
-export class DocumentLoadError extends Error {
-    name: ErrorName;
-    message: string;
-    cause?: Error;
-    /**
-     * Whether a multi-strategy loader should fall through to the next loader on this error.
-     * `true` (default) means "this reference isn't mine" — try the next loader.
-     * `false` means "I recognised this reference and tried to load it, but it failed" — the
-     * error is fatal and should be surfaced to the user instead of being masked.
-     */
-    recoverable: boolean;
-
-    constructor({
-        name,
-        message,
-        cause,
-        recoverable = true
-    }: {
-        name: ErrorName;
-        message: string;
-        cause?: Error;
-        recoverable?: boolean;
-    }) {
-        super();
-        this.name = name;
-        this.message = message;
-        this.cause = cause;
-        this.recoverable = recoverable;
     }
 }

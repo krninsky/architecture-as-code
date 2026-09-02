@@ -18,13 +18,16 @@
 -->
 
 <script lang="ts">
-	import { getTemplatesByCategory, getAllCategories, type CalmTemplate } from './registry';
+	import { getTemplatesByCategory, getAllCategories } from './registry';
+	import { getAllPatterns, type CalmPatternCard } from './patternRegistry';
 
 	let {
 		onselect,
+		onpatternselect,
 		oncancel,
 	}: {
 		onselect: (id: string) => void;
+		onpatternselect?: (id: string) => void;
 		oncancel: () => void;
 	} = $props();
 
@@ -37,6 +40,7 @@
 			'ai-governance': 'AI Governance',
 			general: 'General',
 			opengris: 'OpenGRIS',
+			patterns: 'Patterns',
 		};
 		return map[cat] ?? cat.charAt(0).toUpperCase() + cat.slice(1);
 	}
@@ -54,10 +58,17 @@
 
 	// ─── State ────────────────────────────────────────────────────────────────
 
-	const categories = $derived(getAllCategories());
+	const categories = $derived(
+		getAllPatterns().length > 0
+			? [...getAllCategories().filter((c) => c !== 'patterns'), 'patterns']
+			: getAllCategories()
+	);
 	let activeCategory = $state(getAllCategories()[0] ?? 'fluxnova');
 
-	const activeTemplates = $derived(getTemplatesByCategory(activeCategory));
+	const activeTemplates = $derived(
+		activeCategory === 'patterns' ? [] : getTemplatesByCategory(activeCategory)
+	);
+	const activePatterns = $derived(activeCategory === 'patterns' ? getAllPatterns() : []);
 
 	// ─── Keyboard handling ────────────────────────────────────────────────────
 
@@ -117,7 +128,9 @@
 				>
 					<span class="cat-dot" style="background: {categoryColor(cat)}"></span>
 					{categoryLabel(cat)}
-					<span class="cat-count">{getTemplatesByCategory(cat).length}</span>
+					<span class="cat-count">
+						{cat === 'patterns' ? getAllPatterns().length : getTemplatesByCategory(cat).length}
+					</span>
 				</button>
 			{/each}
 		</div>
@@ -152,7 +165,26 @@
 				</button>
 			{/each}
 
-			{#if activeTemplates.length === 0}
+			{#each activePatterns as pat (pat.id)}
+				<button
+					type="button"
+					class="template-card"
+					onclick={() => onpatternselect?.(pat.id)}
+					aria-label="Generate from pattern: {pat.name}"
+				>
+					<div class="card-header">
+						<span class="card-dot" style="background: {categoryColor('patterns')}"></span>
+						<span class="card-name">{pat.name}</span>
+						<span class="pattern-badge">Pattern</span>
+					</div>
+					<p class="card-description">{pat.description}</p>
+					<div class="card-tags" aria-label="Tags">
+						<span class="tag-pill">{pat.relativePath}</span>
+					</div>
+				</button>
+			{/each}
+
+			{#if activeTemplates.length === 0 && activePatterns.length === 0}
 				<p class="empty-category">No templates in this category yet.</p>
 			{/if}
 		</div>
@@ -426,6 +458,18 @@
 		font-family: var(--font-sans, system-ui, sans-serif);
 		color: var(--color-text-secondary, #64748b);
 		background: var(--color-surface-tertiary, #f1f5f9);
+		border-radius: 10px;
+		padding: 1px 6px;
+		flex-shrink: 0;
+	}
+
+	.pattern-badge {
+		font-size: 10px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #1d4ed8;
+		background: #dbeafe;
 		border-radius: 10px;
 		padding: 1px 6px;
 		flex-shrink: 0;

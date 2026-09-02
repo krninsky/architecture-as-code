@@ -13,6 +13,13 @@
 	initAllPacks();
 	import { initAllTemplates, loadTemplate } from '$lib/templates/registry';
 	import TemplatePicker from '$lib/templates/TemplatePicker.svelte';
+	import PatternChoicesDialog from '$lib/templates/PatternChoicesDialog.svelte';
+	import { getPattern, type CalmPatternCard } from '$lib/templates/patternRegistry';
+	import {
+		generateArchitectureFromPattern,
+		patternGenerateOptions,
+	} from '$lib/templates/generateFromPattern';
+	import type { CalmChoice, CalmOption } from '@finos/calm-shared/generate';
 
 	// Register all templates at module load time alongside packs.
 	initAllTemplates();
@@ -45,9 +52,9 @@
 	} from '$lib/c4/c4Filter';
 	import type { C4Level } from '$lib/c4/c4Filter';
 	import { toggleTheme, isDark } from '$lib/stores/theme.svelte';
-	import { getModelJson, getExportJson, applyFromJson, applyFromCanvas, getModel, resetModel, updateEdgeProperty } from '$lib/stores/calmModel.svelte';
+	import { getModelJson, getExportJson, applyFromJson, applyFromCanvas, getModel, resetModel, updateEdgeProperty, didMergeContainmentOnLastApply } from '$lib/stores/calmModel.svelte';
 	import { calmToFlow } from '$lib/stores/projection';
-	import { applyContainmentFromEdges, applyContainmentVisibility } from '$lib/canvas/containment';
+	import { applyContainmentFromEdges, applyContainmentVisibility, setContainmentMembers } from '$lib/canvas/containment';
 	import { pushSnapshot, resetHistory, undo, redo, exportHistoryState, loadHistoryState, createEmptyHistoryState } from '$lib/stores/history.svelte';
 	import { layoutCalm, type LayoutDirection } from '$lib/layout/elkLayout';
 	import { buildLayoutSizeHints } from '$lib/layout/layoutSizeHints';
@@ -441,6 +448,10 @@
 
 	/** When true, the full-screen TemplatePicker modal is shown. */
 	let showTemplatePicker = $state(false);
+	let pendingPattern = $state<{
+		card: CalmPatternCard;
+		options: CalmOption[];
+	} | null>(null);
 
 	// ─── Unsaved changes dialog (Save / Don't save / Cancel) ─────────────────
 
@@ -994,6 +1005,24 @@
 		markDirty();
 	}
 
+	function handleContainmentMembers(nextIds: string[]) {
+		const edge = selectedEdge;
+		if (!edge) return;
+		const variant = (edge.data?.calmVariant ?? edge.type) as 'composed-of' | 'deployed-in';
+		if (variant !== 'composed-of' && variant !== 'deployed-in') return;
+		const calmRelId = String((edge.data as { calmRelId?: string } | undefined)?.calmRelId ?? edge.id);
+		pushSnapshot(nodes, edges);
+		const result = setContainmentMembers(edge.source, calmRelId, variant, nextIds, nodes, edges);
+		nodes = result.nodes;
+		edges = result.edges;
+		applyFromCanvas(nodes, edges);
+		handlePropertyMutation();
+		markDirty();
+		if (nextIds.length === 0) {
+			selectedEdgeId = null;
+		}
+	}
+
 	/**
 	 * Load a template onto the canvas.
 	 * If the canvas has content, prompts the user to confirm overwrite.
@@ -1019,6 +1048,62 @@
 
 		// Initialize governance score for the loaded template
 		refreshGovernance();
+	}
+
+	async function openGeneratedArchitecture(arch: CalmArchitecture): Promise<void> {
+		persistActiveTab();
+		if (!(await evictOldestTabIfNeeded())) return;
+
+		resetModel();
+		resetHistory();
+		resetFileState();
+		clearValidation();
+		nodes = [];
+		edges = [];
+		selectedNodeId = null;
+		selectedEdgeId = null;
+
+		const tabId = crypto.randomUUID();
+		const newTab: DiagramTabState = {
+			id: tabId,
+			label: 'Untitled',
+			fileHandle: null,
+			relativePath: null,
+			openedAt: Date.now(),
+			nodes: [],
+			edges: [],
+			history: createEmptyHistoryState(),
+			modelJson: getModelJson(),
+			cleanSnapshot: getModelJson(),
+			selectedNodeId: null,
+			selectedEdgeId: null,
+		};
+		diagramTabs = [...diagramTabs, newTab];
+		activeTabId = tabId;
+
+		await importCalmFile(JSON.stringify(arch));
+		markDirty();
+	}
+
+	async function generatePatternIntoNewTab(pattern: object, choices?: CalmChoice[]): Promise<void> {
+		try {
+			const arch = await generateArchitectureFromPattern(pattern, choices);
+			await openGeneratedArchitecture(arch);
+		} catch (e) {
+			importError = (e as Error).message;
+		}
+	}
+
+	async function handlePatternSelect(patternId: string) {
+		const card = getPattern(patternId);
+		if (!card) return;
+		showTemplatePicker = false;
+		const options = patternGenerateOptions(card.pattern);
+		if (options.length > 0) {
+			pendingPattern = { card, options };
+			return;
+		}
+		await generatePatternIntoNewTab(card.pattern);
 	}
 
 	function handlePalettePlace(type: string) {
@@ -1440,6 +1525,9 @@
 
 		// Apply to canonical model
 		applyFromJson(parsed);
+		if (didMergeContainmentOnLastApply()) {
+			markDirty();
+		}
 
 		// Auto-layout with no pinned nodes on fresh import
 		const importHints = buildLayoutSizeHints(parsed);
@@ -2181,6 +2269,7 @@
 							onextract={handleExtractRequest}
 							onfindneighbors={(id) => void openFindNeighbors(id)}
 							onfindusage={(id) => void openFindUsage(id)}
+							oncontainmentmembers={handleContainmentMembers}
 							readonly={isC4Mode()}
 						/>
 					</Pane>
@@ -2224,7 +2313,21 @@
 		{#if showTemplatePicker}
 			<TemplatePicker
 				onselect={handleTemplateLoad}
+				onpatternselect={(id) => void handlePatternSelect(id)}
 				oncancel={() => (showTemplatePicker = false)}
+			/>
+		{/if}
+
+		{#if pendingPattern}
+			<PatternChoicesDialog
+				patternName={pendingPattern.card.name}
+				options={pendingPattern.options}
+				onconfirm={(choices) => {
+					const pattern = pendingPattern!.card.pattern;
+					pendingPattern = null;
+					void generatePatternIntoNewTab(pattern, choices);
+				}}
+				oncancel={() => (pendingPattern = null)}
 			/>
 		{/if}
 

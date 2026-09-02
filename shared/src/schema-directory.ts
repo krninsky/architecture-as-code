@@ -1,7 +1,7 @@
 import pointer from 'json-pointer';
 import { mergeSchemas, updateStringValuesRecursively } from './util.js';
-import { initLogger, Logger } from './logger.js';
-import { DocumentLoader, DocumentLoadError } from './document-loader/document-loader.js';
+import { initLogger, type Logger } from './logger.js';
+import { DocumentLoadError, type DocumentLoader } from './document-loader/types.js';
 import type { CalmDocumentType } from '@finos/calm-models/types';
 
 /**

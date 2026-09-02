@@ -41,7 +41,7 @@
 
 	import { nodeTypes, resolveNodeType } from './nodeTypes';
 	import { edgeTypes, DEFAULT_EDGE_TYPE } from './edgeTypes';
-	import { makeContainment, isContainmentType, ensureContainmentEdge, syncContainmentRelData, applyContainmentVisibility } from './containment';
+	import { makeContainment, isContainmentType, ensureContainmentEdge, syncContainmentRelData, applyContainmentVisibility, extractChildFromParent } from './containment';
 	import { estimateRectangleNodeSize, ARCHIMATE_ICON_WIDTH } from './rectangleNodeSize';
 	import { resolvePackNode, scaffoldNodeMetadata, scaffoldRelationshipMetadata } from '@calmstudio/extensions';
 	import EdgeMarkers from './edges/EdgeMarkers.svelte';
@@ -55,6 +55,13 @@
 	import DuplicateNodeDialog, {
 		type DuplicateNodeResult,
 	} from './DuplicateNodeDialog.svelte';
+	import ContainmentTypeDialog from './ContainmentTypeDialog.svelte';
+	import {
+		containmentVariantsOnParent,
+		getLastUsedContainment,
+		setLastUsedContainment,
+		type ContainmentVariant,
+	} from './containmentLastUsed';
 	import {
 		CANVAS_NODES_CONTEXT,
 		type CanvasNodesGetter,
@@ -658,6 +665,44 @@
 		dropPosition: { x: number; y: number };
 	} | null = $state(null);
 
+	let dragStartParentId: string | undefined = undefined;
+	let dragStartPosition: { x: number; y: number } | undefined = undefined;
+	let altHeldDuringDrag = false;
+
+	let pendingContainment: {
+		childId: string;
+		parentId: string;
+	} | null = $state(null);
+
+	function resolveNestVariant(
+		parentId: string,
+		currentEdges: Edge[]
+	): ContainmentVariant | 'pick' {
+		const variants = containmentVariantsOnParent(parentId, currentEdges);
+		if (variants.length === 0) return 'pick';
+		if (variants.length === 1) return variants[0]!;
+		return getLastUsedContainment(parentId) ?? 'pick';
+	}
+
+	function applyNest(
+		parentId: string,
+		childId: string,
+		variant: ContainmentVariant,
+		currentNodes: Node[],
+		currentEdges: Edge[]
+	): { nodes: Node[]; edges: Edge[] } {
+		setLastUsedContainment(parentId, variant);
+		let nextNodes = makeContainment(parentId, childId, currentNodes);
+		let nextEdges = ensureContainmentEdge(parentId, childId, currentEdges, variant);
+		nextNodes = syncContainmentRelData(nextNodes, nextEdges);
+		return { nodes: nextNodes, edges: nextEdges };
+	}
+
+	function eventHasAlt(event: MouseEvent | TouchEvent | undefined): boolean {
+		if (!event || !('altKey' in event)) return false;
+		return event.altKey;
+	}
+
 	function handleNodeClick({ node }: { node: Node; event: MouseEvent | TouchEvent }) {
 		if (!readonly || !ondblclicknode) return;
 		const now = Date.now();
@@ -682,6 +727,9 @@
 			return;
 		}
 		const ev = event as MouseEvent;
+		altHeldDuringDrag = ev.altKey;
+		dragStartParentId = targetNode.parentId;
+		dragStartPosition = { ...targetNode.position };
 		if (ev.ctrlKey || ev.metaKey) {
 			duplicateDragOrigin = {
 				nodeId: targetNode.id,
@@ -732,6 +780,13 @@
 		const draggedNode = targetNode;
 		if (!draggedNode) return;
 
+		const alt = eventHasAlt(event) || altHeldDuringDrag;
+		altHeldDuringDrag = false;
+		const originalParentId = dragStartParentId;
+		const originalPosition = dragStartPosition;
+		dragStartParentId = undefined;
+		dragStartPosition = undefined;
+
 		// R21 — Ctrl/Cmd+drag → restore original, open duplicate modal
 		if (duplicateDragOrigin && duplicateDragOrigin.nodeId === draggedNode.id) {
 			const origin = duplicateDragOrigin;
@@ -758,45 +813,83 @@
 		}
 		duplicateDragOrigin = null;
 
-		// Svelte Flow may set parentId during drag without creating a CALM edge.
-		// Ensure a composed-of edge exists and sync the canonical model.
-		if (draggedNode.parentId && draggedNode.type !== 'container') {
-			edges = ensureContainmentEdge(draggedNode.parentId, draggedNode.id, edges);
-			nodes = syncContainmentRelData(nodes, edges);
-			applyFromCanvas(nodes, edges);
-			notifyChange();
-			return;
-		}
-
 		if (draggedNode.type === 'container') {
 			applyFromCanvas(nodes, edges);
 			notifyChange();
 			return;
 		}
 
-		// Find any large node whose bounds contain the dragged node's position.
-		// Any node type can become a container when something is dropped into it.
-		for (const candidate of nodes) {
-			if (candidate.id === draggedNode.id) continue;
-			if (candidate.type === 'container' || (candidate.measured?.width && candidate.measured.width > 100)) {
-				const bounds = {
-					x: candidate.position.x,
-					y: candidate.position.y,
-					width: candidate.measured?.width ?? candidate.width ?? 200,
-					height: candidate.measured?.height ?? candidate.height ?? 150,
-				};
-				if (isInsideBounds(draggedNode.position, bounds)) {
-					pushSnapshot(nodes, edges);
-					nodes = makeContainment(candidate.id, draggedNode.id, nodes);
-					edges = ensureContainmentEdge(candidate.id, draggedNode.id, edges);
-					nodes = syncContainmentRelData(nodes, edges);
-					applyFromCanvas(nodes, edges);
-					notifyChange();
+		const dropParentId = findContainmentParent(draggedNode.position, draggedNode.id);
+
+		if (alt) {
+			if (dropParentId && dropParentId !== originalParentId) {
+				pushSnapshot(nodes, edges);
+				let nextNodes = nodes;
+				let nextEdges = edges;
+				if (originalParentId) {
+					const extracted = extractChildFromParent(
+						originalParentId,
+						draggedNode.id,
+						nextNodes,
+						nextEdges
+					);
+					nextNodes = extracted.nodes;
+					nextEdges = extracted.edges;
+				}
+				const variant = resolveNestVariant(dropParentId, nextEdges);
+				if (variant === 'pick') {
+					nodes = nextNodes;
+					edges = nextEdges;
+					pendingContainment = { childId: draggedNode.id, parentId: dropParentId };
 					return;
 				}
+				const nested = applyNest(dropParentId, draggedNode.id, variant, nextNodes, nextEdges);
+				nodes = nested.nodes;
+				edges = nested.edges;
+				applyFromCanvas(nodes, edges);
+				notifyChange();
+				return;
 			}
+			if (originalParentId && dropParentId !== originalParentId) {
+				pushSnapshot(nodes, edges);
+				const extracted = extractChildFromParent(originalParentId, draggedNode.id, nodes, edges);
+				nodes = extracted.nodes;
+				edges = extracted.edges;
+				applyFromCanvas(nodes, edges);
+				notifyChange();
+				return;
+			}
+			applyFromCanvas(nodes, edges);
+			notifyChange();
+			return;
 		}
-		// Regular drag stop (position change only)
+
+		// Plain drag: do not create or remove containment. Revert SF auto-parenting.
+		if (draggedNode.parentId !== originalParentId) {
+			nodes = nodes.map((n) => {
+				if (n.id !== draggedNode.id) return n;
+				if (originalParentId) {
+					return {
+						...n,
+						parentId: originalParentId,
+						extent: 'parent' as const,
+						position: originalPosition ?? n.position,
+					};
+				}
+				const { parentId: _p, extent: _e, ...rest } = n;
+				return { ...(rest as Node), position: originalPosition ?? n.position };
+			});
+			edges = edges.filter(
+				(e) =>
+					!(
+						isContainmentType(e.type ?? '') &&
+						e.target === draggedNode.id &&
+						e.source !== originalParentId
+					)
+			);
+			nodes = syncContainmentRelData(nodes, edges);
+		}
+
 		applyFromCanvas(nodes, edges);
 		notifyChange();
 	}
@@ -854,8 +947,20 @@
 
 		const parentId = findContainmentParent(dropPosition, newId);
 		if (parentId) {
-			nextNodes = makeContainment(parentId, newId, nextNodes);
-			nextEdges = ensureContainmentEdge(parentId, newId, nextEdges);
+			const variant = resolveNestVariant(parentId, nextEdges);
+			if (variant === 'pick') {
+				nodes = nextNodes;
+				edges = nextEdges;
+				nodes = syncContainmentRelData(nodes, edges);
+				applyFromCanvas(nodes, edges);
+				notifyChange();
+				onselectionchange?.(newId, null);
+				pendingContainment = { childId: newId, parentId };
+				return;
+			}
+			const nested = applyNest(parentId, newId, variant, nextNodes, nextEdges);
+			nextNodes = nested.nodes;
+			nextEdges = nested.edges;
 		}
 
 		nodes = nextNodes;
@@ -864,6 +969,22 @@
 		applyFromCanvas(nodes, edges);
 		notifyChange();
 		onselectionchange?.(newId, null);
+	}
+
+	function cancelContainmentPick() {
+		pendingContainment = null;
+	}
+
+	function confirmContainmentPick(variant: ContainmentVariant) {
+		if (!pendingContainment) return;
+		const { childId, parentId } = pendingContainment;
+		pendingContainment = null;
+		pushSnapshot(nodes, edges);
+		const nested = applyNest(parentId, childId, variant, nodes, edges);
+		nodes = nested.nodes;
+		edges = nested.edges;
+		applyFromCanvas(nodes, edges);
+		notifyChange();
 	}
 
 	// ─── Keyboard shortcuts ───────────────────────────────────────────────────
@@ -984,6 +1105,9 @@
 		panOnScroll={false}
 		onconnect={handleConnect}
 		onnodedragstart={handleNodeDragStart}
+		onnodedrag={(e) => {
+			if (e.event && 'altKey' in e.event) altHeldDuringDrag = e.event.altKey;
+		}}
 		onnodedragstop={handleNodeDragStop}
 		ondelete={handleDelete}
 		onedgecontextmenu={handleEdgeContextMenu}
@@ -1066,6 +1190,15 @@
 		defaultName={`${(pendingDuplicate.source.data?.label as string) || 'Node'} (copy)`}
 		onconfirm={confirmDuplicate}
 		oncancel={cancelDuplicate}
+	/>
+{/if}
+
+{#if pendingContainment}
+	<ContainmentTypeDialog
+		childLabel={String(nodes.find((n) => n.id === pendingContainment?.childId)?.data?.label ?? pendingContainment.childId)}
+		parentLabel={String(nodes.find((n) => n.id === pendingContainment?.parentId)?.data?.label ?? pendingContainment.parentId)}
+		onconfirm={confirmContainmentPick}
+		oncancel={cancelContainmentPick}
 	/>
 {/if}
 

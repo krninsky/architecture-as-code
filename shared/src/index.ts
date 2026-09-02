@@ -8,6 +8,11 @@ export {
 export { OutputFormat, ValidateOutputFormat } from './commands/validate/validate.js';
 export { runGenerate } from './commands/generate/generate.js';
 export {
+    generateArchitecture,
+    instantiate,
+    flattenAllOf,
+} from './commands/generate/generate-core.js';
+export {
     runDiff,
     formatDiff,
     detectDocumentType,

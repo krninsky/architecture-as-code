@@ -6,9 +6,9 @@
  * Load CALM templates from a project folder listed in `.calmrj` (R33).
  */
 
-import { scanDirectoryTree } from '$lib/explorer/folderScan';
-import { isPathUnderSearchRoots, listJsonFiles } from '$lib/neighbors/findNeighbors';
 import type { CalmProjectConfig } from '$lib/project/types';
+import { parseCalmPattern } from './patternRegistry';
+import { readJsonFilesUnderDir } from './projectJsonScan';
 import {
 	parseCalmTemplate,
 	registerTemplate,
@@ -23,6 +23,7 @@ export interface ProjectTemplateLoadResult {
 /**
  * Restore bundled templates, then merge project JSON from `templates.dir`.
  * Same `_template.id` overwrites a bundled entry. Invalid files are skipped.
+ * CLI pattern files in the same folder are not templates — skip without warning (R41).
  */
 export async function applyProjectTemplates(
 	root: FileSystemDirectoryHandle | null,
@@ -38,33 +39,22 @@ export async function applyProjectTemplates(
 	let loaded = 0;
 
 	try {
-		const tree = await scanDirectoryTree(root);
-		const files = listJsonFiles(tree).filter((f) =>
-			isPathUnderSearchRoots(f.relativePath, [dir])
-		);
+		const scanned = await readJsonFilesUnderDir(root, dir);
+		warnings.push(...scanned.warnings);
 
-		for (const file of files) {
-			try {
-				const text = await (await file.handle.getFile()).text();
-				let parsed: unknown;
-				try {
-					parsed = JSON.parse(text);
-				} catch {
-					warnings.push(`Skipped ${file.relativePath}: invalid JSON`);
-					continue;
-				}
-				const template = parseCalmTemplate(parsed);
-				if (!template) {
-					warnings.push(
-						`Skipped ${file.relativePath}: not a template (need _template.id, name, category)`
-					);
-					continue;
-				}
+		for (const file of scanned.files) {
+			const template = parseCalmTemplate(file.value);
+			if (template) {
 				registerTemplate(template);
 				loaded += 1;
-			} catch {
-				warnings.push(`Skipped ${file.relativePath}: unreadable`);
+				continue;
 			}
+			if (parseCalmPattern(file.value, file.relativePath)) {
+				continue;
+			}
+			warnings.push(
+				`Skipped ${file.relativePath}: not a template (need _template.id, name, category)`
+			);
 		}
 	} catch {
 		warnings.push(`Template folder "${dir}" could not be scanned`);
