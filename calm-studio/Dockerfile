@@ -39,6 +39,8 @@ for (const w of pkg.workspaces) {\
 
 COPY calm ./calm
 COPY calm-models ./calm-models
+# Vite aliases @finos/calm-shared/* to source (generate-from-pattern).
+COPY shared ./shared
 COPY calm-studio ./calm-studio
 
 RUN npm pkg delete scripts.prepare \
@@ -47,6 +49,7 @@ RUN npm pkg delete scripts.prepare \
     --workspace=@calmstudio/calm-core \
     --workspace=@calmstudio/extensions \
     --workspace=@calmstudio/studio \
+ && npm install --no-save --no-audit --no-fund json-pointer loglevel \
  && npm explore esbuild -- node install.js
 
 RUN npm run build --workspace=calm-models \
