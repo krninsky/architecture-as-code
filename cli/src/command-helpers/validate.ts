@@ -24,8 +24,9 @@ export async function runValidate(options: ValidateOptions) {
     try {
         const { getUrlToLocalFileMap } = await import('./template');
         const urlToLocalMap = getUrlToLocalFileMap(options.urlToLocalFileMapping);
+        const architectureBasePath = options.architecturePath ? path.dirname(path.resolve(options.architecturePath)) : undefined;
         const patternBasePath = options.patternPath ? path.dirname(path.resolve(options.patternPath)) : undefined;
-        const docLoaderOpts = await parseDocumentLoaderConfig(options, urlToLocalMap, patternBasePath);
+        const docLoaderOpts = await parseDocumentLoaderConfig(options, urlToLocalMap, architectureBasePath ?? patternBasePath);
         const docLoader: DocumentLoader = buildDocumentLoader(docLoaderOpts);
         const schemaDirectory = await buildSchemaDirectory(docLoader, options.verbose);
         await schemaDirectory.loadSchemas();
