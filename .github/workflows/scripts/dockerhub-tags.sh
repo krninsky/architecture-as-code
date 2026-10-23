@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print Docker image tags for dockerhub-publish.yml.
+# Print Docker image tags for the Docker Hub publish workflows.
 # Nightly:  <image>:nightly and <image>:nightly-<short-sha>
 # Release:  <image>:<git-tag>, <image>:<version>, <image>:latest
 set -eu
