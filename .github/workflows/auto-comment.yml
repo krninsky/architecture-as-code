@@ -1,11 +1,15 @@
 name: Auto Comment
 
 permissions:
-    contents:  write
+    contents: write
+    pull-requests: write
 
 on: [pull_request]
 jobs:
     run:
+        # The comment needs pull-requests: write. This fork keeps Actions tokens read-only,
+        # so the job runs only in the FINOS repository.
+        if: github.repository == 'finos/architecture-as-code'
         runs-on: ubuntu-latest
         steps:
             - uses: wow-actions/auto-comment@2fc064c21cfb2505de3c5c10e1473b8eb7beca1a # v1
