@@ -140,7 +140,7 @@ describe('runValidate', () => {
 
         expect(mocks.loadMissingDocument).toHaveBeenCalledWith(path.resolve('arch.json'), 'architecture');
         expect(mocks.loadMissingDocument).toHaveBeenCalledWith(path.resolve('patterns/pattern.json'), 'pattern');
-        expect(mocks.parseDocumentLoaderConfig).toHaveBeenCalledWith(options, expect.any(Map), path.dirname(path.resolve('arch.json')));
+        expect(mocks.parseDocumentLoaderConfig).toHaveBeenCalledWith(options, expect.any(Map), path.dirname(path.resolve('patterns/pattern.json')));
     });
 
     it('should resolve workspace-tracked document ids before falling back to the working directory', async () => {
@@ -171,7 +171,7 @@ describe('runValidate', () => {
 
             expect(mocks.loadMissingDocument).toHaveBeenCalledWith(trackedArchPath, 'architecture');
             expect(mocks.loadMissingDocument).toHaveBeenCalledWith(trackedPatternPath, 'pattern');
-            expect(mocks.parseDocumentLoaderConfig).toHaveBeenCalledWith(options, expect.any(Map), path.dirname(trackedArchPath));
+            expect(mocks.parseDocumentLoaderConfig).toHaveBeenCalledWith(options, expect.any(Map), path.dirname(trackedPatternPath));
             expect(validate).toHaveBeenCalledWith(dummyArch, dummyPattern, undefined, expect.anything(), true, undefined);
             expect(mocks.processExit).toHaveBeenCalledWith(0);
         } finally {
@@ -195,6 +195,7 @@ describe('runValidate', () => {
 
         expect(mocks.loadSchemas).toHaveBeenCalled();
         expect(mocks.loadMissingDocument).toHaveBeenCalledWith(path.resolve('arch.json'), 'architecture');
+        expect(mocks.parseDocumentLoaderConfig).toHaveBeenCalledWith(options, expect.any(Map), path.dirname(path.resolve('arch.json')));
         expect(validate).toHaveBeenCalledWith(dummyArch, undefined, undefined, expect.anything(), true, undefined);
         expect(getFormattedOutput).toHaveBeenCalledWith(fakeOutcome, 'json', expect.anything());
         expect(mocks.processExit).toHaveBeenCalledWith(0);

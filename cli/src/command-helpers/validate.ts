@@ -35,7 +35,8 @@ export async function runValidate(options: ValidateOptions) {
         const timelinePath = options.timelinePath ? resolveLocalPath(options.timelinePath, workspace) : undefined;
         const architectureBasePath = architecturePath && isLocalPath(architecturePath) ? path.dirname(architecturePath) : undefined;
         const patternBasePath = patternPath && isLocalPath(patternPath) ? path.dirname(patternPath) : undefined;
-        const docLoaderOpts = await parseDocumentLoaderConfig(options, urlToLocalMap, architectureBasePath ?? patternBasePath);
+        // A pattern $ref is relative to the pattern file. Architecture-only validation still uses the architecture directory.
+        const docLoaderOpts = await parseDocumentLoaderConfig(options, urlToLocalMap, patternBasePath ?? architectureBasePath);
         const docLoader: DocumentLoader = buildDocumentLoader(docLoaderOpts);
         const schemaDirectory = await buildSchemaDirectory(docLoader, options.verbose);
         await schemaDirectory.loadSchemas();
