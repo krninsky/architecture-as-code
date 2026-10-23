@@ -29,14 +29,18 @@ jobs:
     osv-fix:
         name: osv-fix
         runs-on: ubuntu-latest
+        # FINOS release app only. A fork has no RELEASE_APP_ID secret.
         # The branch filter matches the head branch of the triggering run, which a pull
         # request from a fork can also call main, so pull request runs are excluded. A failed
         # push, scheduled or manual scan of main all start the fix.
         if: >-
-            github.event_name == 'workflow_dispatch' ||
-            (github.event.workflow_run.conclusion == 'failure' &&
-            github.event.workflow_run.event != 'pull_request' &&
-            github.event.workflow_run.head_repository.full_name == github.repository)
+            github.repository == 'finos/architecture-as-code' &&
+            (
+              github.event_name == 'workflow_dispatch' ||
+              (github.event.workflow_run.conclusion == 'failure' &&
+              github.event.workflow_run.event != 'pull_request' &&
+              github.event.workflow_run.head_repository.full_name == github.repository)
+            )
         steps:
             - name: Harden Runner
               uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2

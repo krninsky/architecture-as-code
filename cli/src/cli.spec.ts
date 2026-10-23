@@ -7,7 +7,6 @@ import {
 } from '@finos/calm-shared';
 import { Command } from 'commander';
 import { MockInstance } from 'vitest';
-import path from 'path';
 
 let calmShared: typeof import('@finos/calm-shared');
 let validateModule: typeof import('./command-helpers/validate');
