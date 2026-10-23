@@ -29,7 +29,7 @@ concurrency:
 jobs:
     build-and-push:
         name: Build and Push Read-Only Static Docker Image
-        # FINOS registry flow. The fork publishes from dockerhub-publish.yml.
+        # FINOS registry flow. The fork publishes from dockerhub-publish-calm-hub.yml.
         if: github.repository == 'finos/architecture-as-code'
         runs-on: ubuntu-latest
 
