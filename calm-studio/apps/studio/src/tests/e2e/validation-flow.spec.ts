@@ -15,8 +15,8 @@
  *
  * Key UI elements (from ValidationPanel.svelte):
  * - Panel header: "Problems" text + summary like "1 warning"
- * - Issue rows: .vp-row elements with severity icon + message text
- * - Row click triggers onnavigatetonode
+ * - Issue rows: ColumnGrid .data rows. The message is a .vp-message-btn.
+ * - Message click triggers onnavigatetonode
  * - Toolbar: aria-label "Validate CALM diagram"
  *
  * Validation notes from STATE.md:
@@ -66,7 +66,7 @@ test.describe('Validation flow', () => {
     await expect(summaryText).toBeVisible({ timeout: 5_000 });
 
     // There should be at least one issue row
-    const issueRows = page.locator('.vp-row');
+    const issueRows = page.locator('.column-grid .data');
     await expect(issueRows.first()).toBeVisible({ timeout: 5_000 });
   });
 
@@ -85,12 +85,12 @@ test.describe('Validation flow', () => {
     // Wait for panel
     await expect(page.getByText('Problems', { exact: true })).toBeVisible({ timeout: 10_000 });
 
-    const issueRows = page.locator('.vp-row');
+    const issueRows = page.locator('.column-grid .data');
     await expect(issueRows.first()).toBeVisible({ timeout: 5_000 });
 
-    // Click the first issue row — this should call onnavigatetonode
+    // Click the message — this should call onnavigatetonode
     // which centers the canvas on the problem element
-    await issueRows.first().click();
+    await issueRows.first().locator('.vp-message-btn').click();
 
     // Wait for navigation to happen
     await page.waitForTimeout(500);
@@ -141,7 +141,7 @@ test.describe('Validation flow', () => {
     await expect(page.getByText('Problems', { exact: true })).toBeVisible({ timeout: 10_000 });
 
     // Should have at least 2 issue rows (one per orphaned node)
-    const issueRows = page.locator('.vp-row');
+    const issueRows = page.locator('.column-grid .data');
     const rowCount = await issueRows.count();
     expect(rowCount).toBeGreaterThanOrEqual(2);
 
