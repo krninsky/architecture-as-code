@@ -14,7 +14,8 @@
 # For a fully self-contained (multi-stage) build, use Dockerfile instead.
 #
 
-FROM nginx:1.27-alpine
+# Stable nginx without the optional modules that pull libxml2 and curl.
+FROM nginx:1.30.6-alpine-slim
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY apps/studio/build /usr/share/nginx/html

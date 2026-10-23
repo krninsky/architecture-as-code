@@ -86,7 +86,8 @@ RUN npm run build --workspace=calm-models \
  && npm exec --workspace=@calmstudio/studio -- vite build
 
 # ---- runtime ----
-FROM nginx:1.27-alpine
+# Stable nginx without the optional modules that pull libxml2 and curl.
+FROM nginx:1.30.6-alpine-slim
 
 ARG BASE_PATH=
 ENV BASE_PATH=${BASE_PATH}
