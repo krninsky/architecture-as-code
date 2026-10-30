@@ -151,6 +151,13 @@ V16
   -- po najetiu na bunku se jako tooltip zobrazí celá hodnota v bunce.
   -- budou mit hlavičku s popisem sloupce. Nad tou to halvičkou bude možnost menit taženim hrany velikost sloupce. zmena nemeni velist cele tabulyk pouze meni velikost sloupcu prilehajících k hraně, která je tažena. 
 - dialog pro Find neighbors udělej s možností zmeny velkosti  
+- doplni tdo buildu všecny calm core schemata tak aby se tyto schemata netahala online.
+V17
+- doplnit podporu pro hodnoty z metadat pro vazbu  " "line-style": "dotted",
+        "routing": "smoothstep":  stejen jako je to v pluginu pro vscode calm canvas umožni pro tyto hodnotry nastavit default value v extenzion a navic pdoporovat obarveni "line-color": "#a9e22c",
+"text-color": "#6a2216".  Routing enum values Curve,Elbow,Straight. Line-style enum values Solid,Dashed,Dotted. A umožnit nastaveni zobrazeni decription vazby. Default bude definovat extenzion. 
+- podpora custmon vazeb. takové vazby se  nesmi ztracet  i s nedefinovanou  realtions type. Vazba se musi vykreslit  odpovidáli strukturou vazbě typu options. graficky reprezentace custom vazby muže byt definovana v extenzion pack. stenej tak je potřeba tyto vazby nabýzet comboboxu typ vazby dle schematu a aktivnich extenzions. 
+
 
 Vxx
 - použivat  namessapce v detailed-architecture. Namespace pro projekt umisti do konfigurace.Pro namespace root adresař je v konfiguraci. Adreasře v tomto rootu už odpovifdajicestev namespace. Artefakty z tohoto namespace prekladej na lokálni soubory projektu. Priklad mapovani namesapce na adresařovou strukturu ns: https://architecture.creditas.cz/ je mapovana na adresař : v projekt architecture-model tj vysledná namespace pro soubor architecture-model/onebank/components-ext/test.architecture.json je https://architecture.creditas.cz/onebank/components-ext/test.architecture.json

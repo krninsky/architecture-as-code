@@ -54,6 +54,12 @@
 	import { toggleTheme, isDark } from '$lib/stores/theme.svelte';
 	import { getModelJson, getExportJson, applyFromJson, applyFromCanvas, getModel, resetModel, updateEdgeProperty, didMergeContainmentOnLastApply, setDocumentAdrs } from '$lib/stores/calmModel.svelte';
 	import { calmToFlow } from '$lib/stores/projection';
+	import {
+		canvasVariantForRelationshipType,
+		relationshipTypeRecord,
+		soleRelationshipKey,
+	} from '$lib/relationships/optionsRelationship';
+	import { storedRelationshipTypeKey } from '$lib/relationships/relationshipTypeChoice';
 	import { applyContainmentFromEdges, applyContainmentVisibility, setContainmentMembers } from '$lib/canvas/containment';
 	import { pushSnapshot, resetHistory, undo, redo, exportHistoryState, loadHistoryState, createEmptyHistoryState } from '$lib/stores/history.svelte';
 	import { layoutCalm, type LayoutDirection } from '$lib/layout/elkLayout';
@@ -1734,12 +1740,12 @@
 			const rel = modelRelMap.get(calmId);
 			if (rel) {
 				const rt = rel['relationship-type'];
-				const variant =
-					'connects' in rt ? 'connects'
-					: 'composed-of' in rt ? 'composed-of'
-					: 'interacts' in rt ? 'interacts'
-					: 'deployed-in' in rt ? 'deployed-in'
-					: 'options';
+				const variant = canvasVariantForRelationshipType(rt);
+				if (!variant) return e;
+				const raw = relationshipTypeRecord(rt);
+				const typeKey =
+					storedRelationshipTypeKey(rt, rel.metadata as Record<string, unknown> | undefined) ??
+					(raw ? soleRelationshipKey(raw) : variant);
 				return {
 					...e,
 					type: variant,
@@ -1747,8 +1753,12 @@
 						...e.data,
 						calmRelId: calmId,
 						calmVariant: variant,
+						relationshipTypeKey: typeKey ?? variant,
+						originalRelationshipType: variant === 'options' ? rt : undefined,
 						protocol: rel.protocol ?? '',
 						description: rel.description ?? '',
+						metadata: rel.metadata,
+						controls: rel.controls,
 					},
 				};
 			}

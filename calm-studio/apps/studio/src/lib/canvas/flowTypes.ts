@@ -34,6 +34,8 @@ export interface CalmFlowNodeData {
 export interface CalmFlowEdgeData {
 	calmRelId?: string;
 	calmVariant?: string;
+	relationshipTypeKey?: string;
+	originalRelationshipType?: unknown;
 	protocol?: CalmProtocol | string;
 	description?: string;
 	controls?: CalmControls;

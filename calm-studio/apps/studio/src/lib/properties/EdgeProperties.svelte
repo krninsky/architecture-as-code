@@ -8,20 +8,20 @@
 -->
 <script lang="ts">
 	import type { Edge } from '@xyflow/svelte';
-	import type {
-		CalmRelationshipType,
-		CalmRelationshipVariant
-	} from '@calmstudio/calm-core';
+	import type { CalmRelationshipVariant } from '@calmstudio/calm-core';
 	import { getContainerAndNodes } from '@calmstudio/calm-core';
 	import { updateEdgeProperty, getModel } from '$lib/stores/calmModel.svelte';
 	import ControlsList from './ControlsList.svelte';
 	import MetadataForm from './MetadataForm.svelte';
 	import { asCalmFlowEdgeData } from '$lib/canvas/flowTypes';
 	import { getMetadataFieldsForRelationship } from '$lib/metadata/metadataForm';
+	import { resolveVariantSyncFromMetadata } from '$lib/metadata/relationshipVariantSync';
 	import {
-		buildRelationshipTypeForVariant,
-		resolveVariantSyncFromMetadata,
-	} from '$lib/metadata/relationshipVariantSync';
+		metadataForRelationshipChoice,
+		metadataWithTypeDefaults,
+		relationshipTypeChoices,
+		relationshipTypeForChoice,
+	} from '$lib/relationships/relationshipTypeChoice';
 
 	const SWAPPABLE_VARIANTS: CalmRelationshipVariant[] = [
 		'connects',
@@ -29,14 +29,6 @@
 		'composed-of',
 		'deployed-in',
 	];
-
-	function buildRelationshipType(
-		variant: CalmRelationshipVariant,
-		source: string,
-		target: string,
-	): CalmRelationshipType {
-		return buildRelationshipTypeForVariant(variant, source, target);
-	}
 
 	let {
 		edge,
@@ -67,15 +59,8 @@
 	const metadataFields = $derived(getMetadataFieldsForRelationship(sourceType, targetType));
 	const edgeMetadata = $derived((ed.metadata as Record<string, unknown> | undefined) ?? {});
 
-	const RELATIONSHIP_TYPES: CalmRelationshipVariant[] = [
-		'connects',
-		'interacts',
-		'deployed-in',
-		'composed-of',
-		'options',
-	];
-
 	const PROTOCOL_TYPES = ['connects', 'interacts'];
+	const canEdit = $derived(Boolean(onmutate));
 
 	const COMMON_PROTOCOLS = [
 		'HTTPS',
@@ -96,6 +81,7 @@
 
 	let showCustomProtocol = $state(false);
 	let firstEditSignaled = $state(false);
+	let styleSectionOpen = $state(false);
 
 	// Reset flag when edge selection changes
 	$effect(() => {
@@ -117,6 +103,17 @@
 
 	const relType: CalmRelationshipVariant = $derived(
 		(edge.data?.calmVariant ?? edge.type ?? 'connects') as CalmRelationshipVariant
+	);
+	const typeKey = $derived(String(ed.relationshipTypeKey ?? relType));
+	const typeChoices = $derived(relationshipTypeChoices(typeKey));
+	function storedMeta(key: string): string {
+		const value = edgeMetadata[key];
+		return typeof value === 'string' ? value : '';
+	}
+	const styleValueCount = $derived(
+		['line-style', 'routing', 'line-color', 'text-color', 'description-display'].filter(
+			(key) => storedMeta(key),
+		).length,
 	);
 	const showProtocol: boolean = $derived(PROTOCOL_TYPES.includes(relType));
 	const canSwapDirection: boolean = $derived(SWAPPABLE_VARIANTS.includes(relType));
@@ -149,14 +146,35 @@
 	}
 
 	function handleRelTypeChange(e: Event) {
-		const value = (e.target as HTMLSelectElement).value as CalmRelationshipVariant;
+		const value = (e.target as HTMLSelectElement).value;
 		signalFirstEdit();
-		// CALM 1.2 nested form: build a fresh relationship-type object using the
-		// edge's current source/target endpoints. Switching variant preserves
-		// connectivity but reshapes the payload (e.g. connects.source.node →
-		// composed-of.container).
-		const nested = buildRelationshipType(value, edge.source, edge.target);
-		updateEdgeProperty(edge.id, 'relationship-type', nested);
+		const chosen = relationshipTypeForChoice(value, edge.source, edge.target);
+		updateEdgeProperty(calmRelId, 'relationship-type', chosen.relationshipType);
+		const rel = getModel().relationships.find((r) => r['unique-id'] === calmRelId);
+		const currentMeta = rel?.metadata;
+		const metaRecord =
+			currentMeta && !Array.isArray(currentMeta)
+				? (currentMeta as Record<string, unknown>)
+				: undefined;
+		const withChoice = metadataForRelationshipChoice(metaRecord, value, chosen.canvasVariant);
+		const nextMeta = metadataWithTypeDefaults(withChoice ?? metaRecord, value);
+		if (nextMeta) updateEdgeProperty(calmRelId, 'metadata', nextMeta);
+		onmutate?.();
+	}
+
+	function setAppearanceKey(key: string, value: string) {
+		if (!canEdit) return;
+		signalFirstEdit();
+		const rel = getModel().relationships.find((r) => r['unique-id'] === calmRelId);
+		const currentMeta = rel?.metadata;
+		const metadata = {
+			...(currentMeta && !Array.isArray(currentMeta)
+				? (currentMeta as Record<string, unknown>)
+				: {}),
+		};
+		if (value === '') delete metadata[key];
+		else metadata[key] = value;
+		updateEdgeProperty(calmRelId, 'metadata', metadata);
 		onmutate?.();
 	}
 
@@ -170,7 +188,7 @@
 		showCustomProtocol = false;
 		localProtocol = value;
 		signalFirstEdit();
-		updateEdgeProperty(edge.id, 'protocol', value);
+		updateEdgeProperty(calmRelId, 'protocol', value);
 		onmutate?.();
 	}
 
@@ -180,7 +198,7 @@
 		signalFirstEdit();
 		clearTimeout(protocolTimer);
 		protocolTimer = setTimeout(() => {
-			updateEdgeProperty(edge.id, 'protocol', value);
+			updateEdgeProperty(calmRelId, 'protocol', value);
 			onmutate?.();
 		}, 300);
 	}
@@ -191,7 +209,7 @@
 		signalFirstEdit();
 		clearTimeout(descTimer);
 		descTimer = setTimeout(() => {
-			updateEdgeProperty(edge.id, 'description', value);
+			updateEdgeProperty(calmRelId, 'description', value);
 			onmutate?.();
 		}, 300);
 	}
@@ -222,18 +240,23 @@
 			edge.source,
 			edge.target,
 		);
-		updateEdgeProperty(edge.id, 'metadata', sync.metadata);
+		updateEdgeProperty(calmRelId, 'metadata', sync.metadata);
 		if (sync.relationshipType) {
-			updateEdgeProperty(edge.id, 'relationship-type', sync.relationshipType);
+			updateEdgeProperty(calmRelId, 'relationship-type', sync.relationshipType);
 		}
 		onmutate?.();
 	}
 
-	function getTypeLabel(type: string): string {
-		return type
-			.split('-')
-			.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-			.join(' ');
+	/** `#rrggbb` for `<input type="color">`. Short and alpha forms keep the text field. */
+	function pickerHex(value: string | undefined): string {
+		if (!value) return '#000000';
+		const short = /^#([0-9A-Fa-f]{3})$/.exec(value);
+		if (short?.[1]) {
+			const [r, g, b] = short[1];
+			return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+		}
+		const full = /^#([0-9A-Fa-f]{6})/i.exec(value);
+		return full?.[1] ? `#${full[1].toLowerCase()}` : '#000000';
 	}
 </script>
 
@@ -241,7 +264,7 @@
 	<!-- Header -->
 	<div class="props-header">
 		<span class="header-label">Relationship Properties</span>
-		<span class="type-badge">{getTypeLabel(relType)}</span>
+		<span class="type-badge">{typeKey}</span>
 	</div>
 
 	<!-- Core fields -->
@@ -260,12 +283,13 @@
 			<select
 				id="edge-rel-type"
 				class="field-select"
-				value={relType}
+				value={typeKey}
 				onchange={handleRelTypeChange}
+				disabled={!canEdit}
 				aria-label="Relationship type"
 			>
-				{#each RELATIONSHIP_TYPES as t}
-					<option value={t}>{getTypeLabel(t)}</option>
+				{#each typeChoices as t (t.value)}
+					<option value={t.value}>{t.label}</option>
 				{/each}
 			</select>
 		</div>
@@ -287,6 +311,7 @@
 					class="field-select"
 					value={showCustomProtocol ? '__custom__' : localProtocol}
 					onchange={handleProtocolSelect}
+					disabled={!canEdit}
 					aria-label="Protocol"
 				>
 					<option value="">— Select —</option>
@@ -305,6 +330,7 @@
 						type="text"
 						value={localProtocol}
 						oninput={handleProtocolInput}
+						disabled={!canEdit}
 						placeholder="e.g. NATS, Redis Pub/Sub"
 						aria-label="Custom protocol"
 					/>
@@ -323,6 +349,7 @@
 				oninput={handleDescriptionInput}
 				placeholder="Relationship description"
 				aria-label="Relationship description"
+				disabled={!canEdit}
 			></textarea>
 		</div>
 
@@ -358,19 +385,133 @@
 				{/if}
 			</div>
 		{:else}
-		<!-- source: read-only -->
-		<div class="field">
-			<label class="field-label" for="edge-source">Source</label>
-			<div class="read-only-field" id="edge-source" title={edge.source}>{edge.source}</div>
-		</div>
-
-		<!-- destination: read-only -->
-		<div class="field">
-			<label class="field-label" for="edge-dest">Destination</label>
-			<div class="read-only-field" id="edge-dest" title={edge.target}>{edge.target}</div>
-		</div>
+			<div class="field">
+				<label class="field-label" for="edge-source">Source</label>
+				<div class="read-only-field" id="edge-source" title={edge.source}>{edge.source}</div>
+			</div>
+			<div class="field">
+				<label class="field-label" for="edge-dest">Destination</label>
+				<div class="read-only-field" id="edge-dest" title={edge.target}>{edge.target}</div>
+			</div>
 		{/if}
 	</div>
+
+	<section class="section">
+		<button
+			type="button"
+			class="section-toggle"
+			onclick={() => (styleSectionOpen = !styleSectionOpen)}
+			aria-expanded={styleSectionOpen}
+		>
+			<span class="chevron" class:open={styleSectionOpen}>
+				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+			</span>
+			<span class="section-label">Visual style</span>
+			{#if styleValueCount > 0}
+				<span class="badge">{styleValueCount}</span>
+			{/if}
+		</button>
+		{#if styleSectionOpen}
+		<div class="fields section-fields">
+			<div class="field">
+				<label class="field-label" for="edge-line-style">Line style</label>
+				<select
+					id="edge-line-style"
+					class="field-select"
+					value={storedMeta('line-style')}
+					disabled={!canEdit}
+					aria-label="Line style"
+					onchange={(e) => setAppearanceKey('line-style', (e.target as HTMLSelectElement).value)}
+				>
+					<option value=""></option>
+					<option value="solid">solid</option>
+					<option value="dashed">dashed</option>
+					<option value="dotted">dotted</option>
+				</select>
+			</div>
+			<div class="field">
+				<label class="field-label" for="edge-routing">Routing</label>
+				<select
+					id="edge-routing"
+					class="field-select"
+					value={storedMeta('routing')}
+					disabled={!canEdit}
+					aria-label="Routing"
+					onchange={(e) => setAppearanceKey('routing', (e.target as HTMLSelectElement).value)}
+				>
+					<option value=""></option>
+					<option value="bezier">bezier</option>
+					<option value="smoothstep">smoothstep</option>
+					<option value="straight">straight</option>
+				</select>
+			</div>
+			<div class="field">
+				<label class="field-label" for="edge-line-color">Line color</label>
+				<div class="color-row">
+					<input
+						class="color-picker"
+						type="color"
+						value={pickerHex(storedMeta('line-color') || undefined)}
+						disabled={!canEdit}
+						aria-label="Line color picker"
+						onchange={(e) => setAppearanceKey('line-color', (e.target as HTMLInputElement).value.toLowerCase())}
+					/>
+					<input
+						id="edge-line-color"
+						class="field-input"
+						type="text"
+						value={storedMeta('line-color')}
+						placeholder="#rrggbb"
+						disabled={!canEdit}
+						aria-label="Line color"
+						onchange={(e) => setAppearanceKey('line-color', (e.target as HTMLInputElement).value.trim().toLowerCase())}
+					/>
+				</div>
+			</div>
+			<div class="field">
+				<label class="field-label" for="edge-text-color">Text color</label>
+				<div class="color-row">
+					<input
+						class="color-picker"
+						type="color"
+						value={pickerHex(storedMeta('text-color') || undefined)}
+						disabled={!canEdit}
+						aria-label="Text color picker"
+						onchange={(e) => setAppearanceKey('text-color', (e.target as HTMLInputElement).value.toLowerCase())}
+					/>
+					<input
+						id="edge-text-color"
+						class="field-input"
+						type="text"
+						value={storedMeta('text-color')}
+						placeholder="#rrggbb"
+						disabled={!canEdit}
+						aria-label="Text color"
+						onchange={(e) => setAppearanceKey('text-color', (e.target as HTMLInputElement).value.trim().toLowerCase())}
+					/>
+				</div>
+			</div>
+			<div class="field">
+				<label class="field-label" for="edge-desc-display">Description display</label>
+				<select
+					id="edge-desc-display"
+					class="field-select"
+					value={storedMeta('description-display')}
+					disabled={!canEdit}
+					aria-label="Description display"
+					onchange={(e) =>
+						setAppearanceKey('description-display', (e.target as HTMLSelectElement).value)}
+				>
+					<option value=""></option>
+					<option value="tooltip">tooltip</option>
+					<option value="label">label</option>
+				</select>
+			</div>
+		</div>
+		{/if}
+	</section>
 
 	<!-- Schema-driven relationship metadata (R17) -->
 	<MetadataForm
@@ -396,7 +537,7 @@
 		controls={ed.controls}
 		onupdate={(newControls) => {
 			signalFirstEdit();
-			updateEdgeProperty(edge.id, 'controls', newControls);
+			updateEdgeProperty(calmRelId, 'controls', newControls);
 			onmutate?.();
 		}}
 		readonly={!onmutate}
@@ -451,11 +592,86 @@
 		color: #94a3b8;
 	}
 
+	.section {
+		border-top: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	:global(.dark) .section {
+		border-color: #1e293b;
+	}
+
+	.section-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		padding: 10px 12px 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.section-toggle:hover {
+		background: var(--color-surface-secondary, #f8fafc);
+	}
+
+	:global(.dark) .section-toggle:hover {
+		background: #0f172a;
+	}
+
+	.chevron {
+		display: flex;
+		align-items: center;
+		color: var(--color-text-tertiary, #94a3b8);
+		transition: transform 0.15s;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.section-label {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-tertiary, #94a3b8);
+		flex: 1;
+	}
+
+	:global(.dark) .section-label {
+		color: #64748b;
+	}
+
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: 9px;
+		font-size: 10px;
+		font-weight: 600;
+		background: var(--color-surface-secondary, #f1f5f9);
+		color: var(--color-text-secondary, #64748b);
+	}
+
+	:global(.dark) .badge {
+		background: #1e293b;
+		color: #94a3b8;
+	}
+
 	.fields {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		padding: 10px 12px;
+	}
+
+	.section-fields {
+		padding: 0 12px 10px;
 	}
 
 	.field {
@@ -525,6 +741,32 @@
 		background: #0f1320;
 		border-color: #334155;
 		color: #64748b;
+	}
+
+	.color-row {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.color-row .field-input {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.color-picker {
+		width: 32px;
+		height: 32px;
+		padding: 2px;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: 6px;
+		background: var(--color-surface, #fff);
+		cursor: pointer;
+	}
+
+	.color-picker:disabled {
+		cursor: default;
+		opacity: 0.6;
 	}
 
 	.field-input {

@@ -69,6 +69,7 @@
 
 	// Track whether the first edit has been signaled for this selection
 	let firstEditSignaled = $state(false);
+	let styleSectionOpen = $state(false);
 
 	// Reset flag when node selection changes
 	$effect(() => {
@@ -154,6 +155,9 @@
 	}
 
 	const styleOverride = $derived(getNodeStyleOverride(nd.metadata));
+	const styleValueCount = $derived(
+		(styleOverride.background ? 1 : 0) + (styleOverride.text ? 1 : 0),
+	);
 
 	function handleStyleColor(kind: 'background' | 'text', value: string) {
 		if (isReadOnly) return;
@@ -165,6 +169,18 @@
 		});
 		updateNodeProperty(nd.calmId, 'metadata', next);
 		onmutate?.();
+	}
+
+	/** `#rrggbb` for `<input type="color">`. An empty stored color keeps the text field blank. */
+	function pickerHex(value: string | undefined): string {
+		if (!value) return '#000000';
+		const short = /^#([0-9A-Fa-f]{3})$/.exec(value);
+		if (short?.[1]) {
+			const [r, g, b] = short[1];
+			return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+		}
+		const full = /^#([0-9A-Fa-f]{6})/i.exec(value);
+		return full?.[1] ? `#${full[1].toLowerCase()}` : '#000000';
 	}
 
 	function getTypeLabel(type: string): string {
@@ -332,32 +348,76 @@
 		{/if}
 	</div>
 
-	<div class="fields">
-		<div class="field">
-			<label class="field-label" for="node-color-bg">Background color</label>
-			<input
-				id="node-color-bg"
-				class="field-color"
-				type="color"
-				value={styleOverride.background ?? '#ffffff'}
-				onchange={(e) => handleStyleColor('background', (e.currentTarget as HTMLInputElement).value)}
-				aria-label="Background color"
-				disabled={isReadOnly}
-			/>
+	<section class="section">
+		<button
+			type="button"
+			class="section-toggle"
+			onclick={() => (styleSectionOpen = !styleSectionOpen)}
+			aria-expanded={styleSectionOpen}
+		>
+			<span class="chevron" class:open={styleSectionOpen}>
+				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+			</span>
+			<span class="section-label">Visual style</span>
+			{#if styleValueCount > 0}
+				<span class="badge">{styleValueCount}</span>
+			{/if}
+		</button>
+		{#if styleSectionOpen}
+		<div class="fields section-fields">
+			<div class="field">
+				<label class="field-label" for="node-color-bg">Background color</label>
+				<div class="color-row">
+					<input
+						class="field-color"
+						type="color"
+						value={pickerHex(styleOverride.background)}
+						onchange={(e) => handleStyleColor('background', (e.currentTarget as HTMLInputElement).value)}
+						aria-label="Background color picker"
+						disabled={isReadOnly}
+					/>
+					<input
+						id="node-color-bg"
+						class="field-input"
+						type="text"
+						value={styleOverride.background ?? ''}
+						placeholder="#rrggbb"
+						aria-label="Background color"
+						disabled={isReadOnly}
+						onchange={(e) =>
+							handleStyleColor('background', (e.currentTarget as HTMLInputElement).value.trim())}
+					/>
+				</div>
+			</div>
+			<div class="field">
+				<label class="field-label" for="node-color-text">Text color</label>
+				<div class="color-row">
+					<input
+						class="field-color"
+						type="color"
+						value={pickerHex(styleOverride.text)}
+						onchange={(e) => handleStyleColor('text', (e.currentTarget as HTMLInputElement).value)}
+						aria-label="Text color picker"
+						disabled={isReadOnly}
+					/>
+					<input
+						id="node-color-text"
+						class="field-input"
+						type="text"
+						value={styleOverride.text ?? ''}
+						placeholder="#rrggbb"
+						aria-label="Text color"
+						disabled={isReadOnly}
+						onchange={(e) =>
+							handleStyleColor('text', (e.currentTarget as HTMLInputElement).value.trim())}
+					/>
+				</div>
+			</div>
 		</div>
-		<div class="field">
-			<label class="field-label" for="node-color-text">Text color</label>
-			<input
-				id="node-color-text"
-				class="field-color"
-				type="color"
-				value={styleOverride.text ?? '#1e293b'}
-				onchange={(e) => handleStyleColor('text', (e.currentTarget as HTMLInputElement).value)}
-				aria-label="Text color"
-				disabled={isReadOnly}
-			/>
-		</div>
-	</div>
+		{/if}
+	</section>
 
 	<!-- Schema-driven metadata (R17) -->
 	<MetadataForm
@@ -524,11 +584,97 @@
 		line-height: 1;
 	}
 
+	.section {
+		border-top: 1px solid var(--color-border, #e2e8f0);
+	}
+
+	:global(.dark) .section {
+		border-color: #1e293b;
+	}
+
+	.section-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		padding: 10px 12px 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.section-toggle:hover {
+		background: var(--color-surface-secondary, #f8fafc);
+	}
+
+	:global(.dark) .section-toggle:hover {
+		background: #0f172a;
+	}
+
+	.chevron {
+		display: flex;
+		align-items: center;
+		color: var(--color-text-tertiary, #94a3b8);
+		transition: transform 0.15s;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.section-label {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-tertiary, #94a3b8);
+		flex: 1;
+	}
+
+	:global(.dark) .section-label {
+		color: #64748b;
+	}
+
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: 9px;
+		font-size: 10px;
+		font-weight: 600;
+		background: var(--color-surface-secondary, #f1f5f9);
+		color: var(--color-text-secondary, #64748b);
+	}
+
+	:global(.dark) .badge {
+		background: #1e293b;
+		color: #94a3b8;
+	}
+
 	.fields {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		padding: 10px 12px;
+	}
+
+	.section-fields {
+		padding: 0 12px 10px;
+	}
+
+	.color-row {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.color-row .field-input {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.field {

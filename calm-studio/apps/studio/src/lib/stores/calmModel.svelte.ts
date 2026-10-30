@@ -29,6 +29,7 @@ import {
 	flowNodesToLayoutMap,
 	mergeLayoutIntoMetadata,
 } from '$lib/layout/layoutPersist';
+import { isUndrawableRelationship } from '$lib/relationships/optionsRelationship';
 
 // ─── Module-level state ───────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ function enrichRelationshipsFromModel(
 
 function isContainmentRelationship(rel: CalmRelationship): boolean {
 	const rt = rel['relationship-type'];
+	if (!rt || typeof rt !== 'object') return false;
 	return 'composed-of' in rt || 'deployed-in' in rt;
 }
 
@@ -133,14 +135,39 @@ function representedModelRelIds(flowEdges: Edge[]): Set<string> {
 	const ids = new Set<string>();
 	for (const e of flowEdges) {
 		const d = (e.data ?? {}) as { calmRelId?: string };
-		const base =
-			d.calmRelId ??
-			(e.id.includes('#') ? e.id.slice(0, e.id.indexOf('#')) : e.id);
+		const hash = e.id.indexOf('#');
+		const underscore = e.id.indexOf('__');
+		const cut = hash > 0 ? hash : underscore > 0 ? underscore : -1;
+		const base = d.calmRelId ?? (cut > 0 ? e.id.slice(0, cut) : e.id);
 		if (!base.startsWith('inferred-')) {
 			ids.add(base);
 		}
 	}
 	return ids;
+}
+
+function appendUndrawableRelationships(
+	canvasRels: CalmRelationship[],
+	modelRels: CalmRelationship[],
+	flowNodes: Node[],
+	flowEdges: Edge[],
+): CalmRelationship[] {
+	if (modelRels.length === 0) return canvasRels;
+	const present = new Set(canvasRels.map((rel) => rel['unique-id']));
+	const represented = representedModelRelIds(flowEdges);
+	const nodeIds = new Set(
+		flowNodes.map((node) => {
+			const calmId = (node.data as { calmId?: string } | undefined)?.calmId;
+			return calmId ?? node.id;
+		}),
+	);
+	const kept = modelRels.filter(
+		(rel) =>
+			!present.has(rel['unique-id']) &&
+			!represented.has(rel['unique-id']) &&
+			isUndrawableRelationship(rel['relationship-type'], nodeIds),
+	);
+	return kept.length > 0 ? [...canvasRels, ...kept] : canvasRels;
 }
 
 function appendMissingModelRelationships(
@@ -194,6 +221,12 @@ export function buildPersistedArchitecture(
 				: canvasBody.relationships;
 	} else {
 		relationships = enrichRelationshipsFromModel(canvasBody.relationships, modelRelationships);
+		relationships = appendUndrawableRelationships(
+			relationships,
+			modelRelationships,
+			flowNodes,
+			flowEdges,
+		);
 		if (preserveMissing) {
 			relationships = appendMissingModelRelationships(
 				relationships,

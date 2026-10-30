@@ -17,6 +17,8 @@
 		getRoutedEdgePath,
 		type CanvasNodesGetter,
 	} from '../edgeRouting/routedEdgePath';
+	import { appearanceForEdgeData, markerId, paintStyle } from './edgeVisual';
+	import EdgeDecoration from './EdgeDecoration.svelte';
 
 	let {
 		id,
@@ -35,6 +37,8 @@
 	}: EdgeProps = $props();
 
 	const getCanvasNodes = getContext<CanvasNodesGetter>(CANVAS_NODES_CONTEXT) ?? (() => [] as Node[]);
+	const edgeData = $derived((data ?? {}) as Record<string, unknown>);
+	const appearance = $derived(appearanceForEdgeData(edgeData));
 
 	const [edgePath, labelX, labelY] = $derived(
 		getRoutedEdgePath(getCanvasNodes(), {
@@ -46,30 +50,52 @@
 			targetPosition,
 			sourceId: source,
 			targetId: target,
+			routing: appearance.routing,
 		})
 	);
 
-	const protocolLabel = $derived((data as Record<string, unknown>)?.protocol ?? label);
+	const protocolLabel = $derived(edgeData.protocol ?? label);
+	const description = $derived(typeof edgeData.description === 'string' ? edgeData.description : '');
+	const markerEndUrl = $derived(
+		appearance.lineColor ? `url(#${markerId('filled', id)})` : 'url(#marker-arrow-filled)',
+	);
 
 	const validationStyle = $derived(
-		(data as Record<string, unknown>)?.validationSeverity === 'error'
+		edgeData.validationSeverity === 'error'
 			? 'stroke: #dc2626; stroke-width: 2.5;'
-			: (data as Record<string, unknown>)?.validationSeverity === 'warning'
+			: edgeData.validationSeverity === 'warning'
 				? 'stroke: #d97706; stroke-width: 2;'
 				: undefined
 	);
-	const finalStyle = $derived(validationStyle ? `${style ?? ''} ${validationStyle}` : style);
+	const finalStyle = $derived(paintStyle(appearance, style, validationStyle));
 
-	const flowTransition = $derived((data as Record<string, unknown>)?.flowTransition as CalmTransition | null | undefined);
-	const dimmed = $derived((data as Record<string, unknown>)?.dimmed === true);
+	const flowTransition = $derived(edgeData.flowTransition as CalmTransition | null | undefined);
+	const dimmed = $derived(edgeData.dimmed === true);
+	let hovered = $state(false);
 </script>
 
-<g style={dimmed ? 'opacity: 0.3' : ''}>
+<g
+	role="presentation"
+	style={dimmed ? 'opacity: 0.3' : ''}
+	onmouseenter={() => (hovered = true)}
+	onmouseleave={() => (hovered = false)}
+>
 	<BaseEdge
 		{id}
 		path={edgePath}
-		markerEnd="url(#marker-arrow-filled)"
+		markerEnd={markerEndUrl}
 		style={finalStyle}
+	/>
+	<EdgeDecoration
+		edgeId={id}
+		kind="filled"
+		lineColor={appearance.lineColor}
+		{description}
+		descriptionDisplay={appearance.descriptionDisplay}
+		textColor={appearance.textColor}
+		{labelX}
+		{labelY}
+		{hovered}
 	/>
 
 	{#if protocolLabel}

@@ -14,6 +14,7 @@ import {
 	type HandlePosition,
 } from './obstacleRouter';
 import { orthogonalPathToBezier } from './bezierPath';
+import type { EdgeRouting } from '$lib/relationships/relationshipAppearance';
 
 export const CANVAS_NODES_CONTEXT = 'calm-canvas-nodes';
 
@@ -39,8 +40,17 @@ export function getRoutedEdgePath(
 		targetPosition?: Position | string;
 		sourceId?: string;
 		targetId?: string;
+		routing?: EdgeRouting;
 	}
 ): [string, number, number] {
+	const routing = args.routing ?? 'bezier';
+	if (routing === 'straight') {
+		return [
+			`M ${args.sourceX},${args.sourceY} L ${args.targetX},${args.targetY}`,
+			(args.sourceX + args.targetX) / 2,
+			(args.sourceY + args.targetY) / 2,
+		];
+	}
 	const exclude = relationshipObstacleExclusions(nodes, args.sourceId, args.targetId);
 	const obstacles = collectNodeObstacles(nodes, exclude, 0);
 	const result = routeEdgeOrthogonal({
@@ -57,5 +67,6 @@ export function getRoutedEdgePath(
 		obstacles,
 		padding: 8,
 	});
-	return [orthogonalPathToBezier(result.path), result.labelX, result.labelY];
+	const path = routing === 'smoothstep' ? result.path : orthogonalPathToBezier(result.path);
+	return [path, result.labelX, result.labelY];
 }
