@@ -40,6 +40,10 @@ export interface RelationshipTypeEntry {
   label: string;
   description?: string;
   calmCoreVariant?: 'connects' | 'composed-of' | 'deployed-in' | 'interacts' | 'options';
+  /** Appearance and other metadata written onto a new relationship of this type. */
+  defaults?: {
+    metadata?: Record<string, unknown>;
+  };
 }
 
 /** A complete pack definition containing metadata and all node type entries. */

@@ -10,7 +10,7 @@
  *   - `connects` variant → 1 edge (source.node → destination.node)
  *   - `composed-of`/`deployed-in` variant → N edges (container → each child)
  *   - `interacts` variant → N edges (actor → each interacted node)
- *   - `options` variant → 0 edges (no graph topology in spec)
+ *   - `options` and any other key with an options-shaped body → edges from the first node to each later node
  *   When a multi-child variant has N>1, each derived edge gets a suffixed
  *   unique-id (`<base>#<i>`) so Svelte Flow stays 1-edge-per-row.
  *
@@ -46,6 +46,13 @@ import {
 	resolveRectangleNodeWidth,
 	ARCHIMATE_ICON_WIDTH,
 } from '$lib/canvas/rectangleNodeSize';
+import {
+	canvasVariantForRelationshipType,
+	optionsPairs,
+	relationshipTypeRecord,
+	soleRelationshipKey,
+} from '$lib/relationships/optionsRelationship';
+import { storedRelationshipTypeKey } from '$lib/relationships/relationshipTypeChoice';
 
 function rectangleSizeForNode(
 	cn: CalmNode,
@@ -79,13 +86,8 @@ const CONTAINMENT_VARIANTS: ReadonlySet<CalmRelationshipVariant> = new Set([
  * Discover the variant key actually present on a relationship-type object.
  * Returns null when the variant is malformed (no recognised key).
  */
-function variantOf(rt: CalmRelationshipType): CalmRelationshipVariant | null {
-	if ('connects' in rt) return 'connects';
-	if ('composed-of' in rt) return 'composed-of';
-	if ('interacts' in rt) return 'interacts';
-	if ('deployed-in' in rt) return 'deployed-in';
-	if ('options' in rt) return 'options';
-	return null;
+function variantOf(rt: CalmRelationshipType | undefined): CalmRelationshipVariant | null {
+	return canvasVariantForRelationshipType(rt);
 }
 
 /**
@@ -95,8 +97,11 @@ function variantOf(rt: CalmRelationshipType): CalmRelationshipVariant | null {
  */
 function expandEdgePairs(
 	rel: CalmRelationship,
+	presentNodeIds?: ReadonlySet<string>,
 ): Array<{ source: string; target: string; variant: CalmRelationshipVariant }> {
-	const rt = rel['relationship-type'];
+	const raw = relationshipTypeRecord(rel['relationship-type']);
+	if (!raw) return [];
+	const rt = raw as CalmRelationshipType;
 	if ('connects' in rt) {
 		return [
 			{
@@ -127,8 +132,13 @@ function expandEdgePairs(
 			variant: 'interacts' as const
 		}));
 	}
-	// `options` has no graph topology; skip.
-	return [];
+	const key = soleRelationshipKey(raw);
+	if (!key) return [];
+	return optionsPairs(raw[key], presentNodeIds).map((pair) => ({
+		source: pair.source,
+		target: pair.target,
+		variant: 'options' as const,
+	}));
 }
 
 /**
@@ -284,13 +294,24 @@ export function calmToFlow(
 	// in `data.calmRelId` so flowToCalm can merge containment children back into
 	// one relationship with `nodes[]`.
 	const edges: Edge[] = [];
+	const nodeIds = new Set(arch.nodes.map((node) => node['unique-id']));
 	for (const cr of arch.relationships) {
-		const pairs = expandEdgePairs(cr);
+		const rawType = relationshipTypeRecord(cr['relationship-type']);
+		const pairs = expandEdgePairs(cr, nodeIds);
 		const multi = pairs.length > 1;
+		const typeKey =
+			storedRelationshipTypeKey(
+				cr['relationship-type'],
+				cr.metadata as Record<string, unknown> | undefined,
+			) ?? (rawType ? soleRelationshipKey(rawType) : null);
+		const preserveType = pairs.some((pair) => pair.variant === 'options');
 		pairs.forEach((pair, i) => {
 			const isContainment = CONTAINMENT_VARIANTS.has(pair.variant);
+			const useOptionsSuffix = pair.variant === 'options';
 			edges.push({
-				id: multi ? `${cr['unique-id']}#${i}` : cr['unique-id'],
+				id: multi
+					? `${cr['unique-id']}${useOptionsSuffix ? `__${i}` : `#${i}`}`
+					: cr['unique-id'],
 				source: pair.source,
 				target: pair.target,
 				type: pair.variant,
@@ -298,6 +319,8 @@ export function calmToFlow(
 				data: {
 					calmRelId: cr['unique-id'],
 					calmVariant: pair.variant,
+					relationshipTypeKey: typeKey ?? pair.variant,
+					...(preserveType ? { originalRelationshipType: cr['relationship-type'] } : {}),
 					protocol: cr.protocol,
 					description: cr.description,
 					controls: cr.controls,
@@ -349,6 +372,8 @@ function relationshipIdForEdge(e: Edge): string {
 	if (d.calmRelId) return d.calmRelId;
 	const hash = e.id.indexOf('#');
 	if (hash > 0) return e.id.slice(0, hash);
+	const underscore = e.id.indexOf('__');
+	if (underscore > 0) return e.id.slice(0, underscore);
 	return e.id;
 }
 
@@ -363,10 +388,12 @@ function edgeToRelationship(
 		description?: string;
 		controls?: CalmControls;
 		metadata?: Record<string, unknown>;
+		originalRelationshipType?: CalmRelationshipType;
 	};
 	const rel: CalmRelationship = {
 		'unique-id': relationshipIdForEdge(e),
-		'relationship-type': buildRelationshipType(variant, sourceId, targetId),
+		'relationship-type':
+			edgeData.originalRelationshipType ?? buildRelationshipType(variant, sourceId, targetId),
 	};
 	if (edgeData.protocol) rel.protocol = edgeData.protocol as CalmProtocol;
 	if (edgeData.description) rel.description = edgeData.description;
@@ -427,6 +454,12 @@ export function flowToCalm(nodes: Node[], edges: Edge[]): CalmArchitecture {
 	});
 
 	const nonContainment: CalmRelationship[] = [];
+	type OptionsGroup = {
+		rel: CalmRelationship;
+		key: string;
+		pairs: Array<{ source: string; target: string }>;
+	};
+	const optionGroups = new Map<string, OptionsGroup>();
 	type ContainmentGroup = {
 		rel: CalmRelationship;
 		nodes: string[];
@@ -443,6 +476,32 @@ export function flowToCalm(nodes: Node[], edges: Edge[]): CalmArchitecture {
 		const sourceId = flowIdToCalmId.get(e.source) ?? e.source;
 		const targetId = flowIdToCalmId.get(e.target) ?? e.target;
 		const rel = edgeToRelationship(e, variant, sourceId, targetId);
+
+		if (variant === 'options') {
+			const data = (e.data ?? {}) as {
+				relationshipTypeKey?: string;
+				originalRelationshipType?: unknown;
+			};
+			const original = relationshipTypeRecord(data.originalRelationshipType);
+			const key =
+				data.relationshipTypeKey ??
+				(original ? soleRelationshipKey(original) : null) ??
+				'options';
+			const id = rel['unique-id'];
+			const existing = optionGroups.get(id);
+			if (!existing) {
+				optionGroups.set(id, {
+					rel,
+					key,
+					pairs: [{ source: sourceId, target: targetId }],
+				});
+			} else if (
+				!existing.pairs.some((pair) => pair.source === sourceId && pair.target === targetId)
+			) {
+				existing.pairs.push({ source: sourceId, target: targetId });
+			}
+			continue;
+		}
 
 		if (variant !== 'composed-of' && variant !== 'deployed-in') {
 			nonContainment.push(rel);
@@ -463,6 +522,26 @@ export function flowToCalm(nodes: Node[], edges: Edge[]): CalmArchitecture {
 		if (!existing.nodes.includes(targetId)) {
 			existing.nodes.push(targetId);
 		}
+	}
+
+	for (const group of optionGroups.values()) {
+		const nodes: string[] = [];
+		for (const pair of group.pairs) {
+			if (!nodes.includes(pair.source)) nodes.push(pair.source);
+			if (!nodes.includes(pair.target)) nodes.push(pair.target);
+		}
+		nonContainment.push({
+			...group.rel,
+			'relationship-type': {
+				[group.key]: [
+					{
+						description: group.rel.description ?? '',
+						nodes,
+						relationships: [],
+					},
+				],
+			} as CalmRelationship['relationship-type'],
+		});
 	}
 
 	const containmentRels: CalmRelationship[] = [...groups.values()].map((g) => ({

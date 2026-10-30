@@ -105,6 +105,7 @@
 	function handleBlur() {
 		isFocused = false;
 		if (localValue !== value) {
+			localValue = value;
 			lastSyncedExternal = value;
 		}
 	}

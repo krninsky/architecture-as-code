@@ -13,14 +13,17 @@ import core10 from '$calm-release/1.0/meta/core.json';
 import calm10 from '$calm-release/1.0/meta/calm.json';
 import iface10 from '$calm-release/1.0/meta/interface.json';
 import control10 from '$calm-release/1.0/meta/control.json';
+import flow10 from '$calm-release/1.0/meta/flow.json';
 import core11 from '$calm-release/1.1/meta/core.json';
 import calm11 from '$calm-release/1.1/meta/calm.json';
 import iface11 from '$calm-release/1.1/meta/interface.json';
 import control11 from '$calm-release/1.1/meta/control.json';
+import flow11 from '$calm-release/1.1/meta/flow.json';
 import core12 from '$calm-release/1.2/meta/core.json';
 import calm12 from '$calm-release/1.2/meta/calm.json';
 import iface12 from '$calm-release/1.2/meta/interface.json';
 import control12 from '$calm-release/1.2/meta/control.json';
+import flow12 from '$calm-release/1.2/meta/flow.json';
 import draftCore from '$calm-draft/2025-03/meta/core.json';
 import draftCalm from '$calm-draft/2025-03/meta/calm.json';
 import draftIface from '$calm-draft/2025-03/meta/interface.json';
@@ -77,9 +80,9 @@ function putSchema(map: Map<string, object>, doc: object): void {
 export function bundledCalmSchemas(): Map<string, object> {
 	const map = new Map<string, object>();
 	for (const doc of [
-		core10, calm10, iface10, control10,
-		core11, calm11, iface11, control11,
-		core12, calm12, iface12, control12,
+		core10, calm10, iface10, control10, flow10,
+		core11, calm11, iface11, control11, flow11,
+		core12, calm12, iface12, control12, flow12,
 		draftCore, draftCalm, draftIface, draftControl, draftFlow,
 		jsonSchema202012,
 		jsonSchema202012Core,

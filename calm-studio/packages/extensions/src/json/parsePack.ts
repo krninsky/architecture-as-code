@@ -156,6 +156,9 @@ function parseRelationship(
 			rel.calmCoreVariant = variant as NonNullable<RelationshipTypeEntry['calmCoreVariant']>;
 		}
 	}
+	if (isRecord(value['defaults']) && isRecord(value['defaults']['metadata'])) {
+		rel.defaults = { metadata: value['defaults']['metadata'] };
+	}
 	return rel;
 }
 

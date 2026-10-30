@@ -44,6 +44,12 @@
 	import { makeContainment, isContainmentType, ensureContainmentEdge, syncContainmentRelData, applyContainmentVisibility, extractChildFromParent } from './containment';
 	import { estimateRectangleNodeSize, ARCHIMATE_ICON_WIDTH } from './rectangleNodeSize';
 	import { resolvePackNode, scaffoldNodeMetadata, scaffoldRelationshipMetadata } from '@calmstudio/extensions';
+	import {
+		metadataForRelationshipChoice,
+		metadataWithTypeDefaults,
+		relationshipTypeChoices,
+		relationshipTypeForChoice,
+	} from '$lib/relationships/relationshipTypeChoice';
 	import EdgeMarkers from './edges/EdgeMarkers.svelte';
 	import NodeSearch from '$lib/search/NodeSearch.svelte';
 	import { pushSnapshot, undo, redo } from '$lib/stores/history.svelte';
@@ -130,10 +136,14 @@
 		const sourceType = String(nodes.find((n) => n.id === sourceId)?.data?.calmType ?? '');
 		const targetType = String(nodes.find((n) => n.id === targetId)?.data?.calmType ?? '');
 		const base: Record<string, unknown> = { protocol: '', description: '' };
-		const metadata = scaffoldRelationshipMetadata(sourceType, targetType);
+		const metadata = metadataWithTypeDefaults(
+			scaffoldRelationshipMetadata(sourceType, targetType),
+			DEFAULT_EDGE_TYPE,
+		);
 		if (metadata) {
 			base.metadata = metadata;
 		}
+		base.relationshipTypeKey = DEFAULT_EDGE_TYPE;
 		return base;
 	}
 
@@ -717,17 +727,36 @@
 
 		const edge = edges.find((e) => e.id === edgeId);
 		if (!edge) return;
+		const chosen = relationshipTypeForChoice(newType, edge.source, edge.target);
+		const previous = (edge.data ?? {}) as Record<string, unknown>;
+		const previousMeta = previous.metadata as Record<string, unknown> | undefined;
+		const metadata = metadataWithTypeDefaults(
+			metadataForRelationshipChoice(previousMeta, newType, chosen.canvasVariant) ?? previousMeta,
+			newType,
+		);
 
 		edges = applyContainmentVisibility(
 			edges.map((e) =>
 				e.id === edgeId
-					? { ...e, type: newType, hidden: isContainmentType(newType) }
+					? {
+							...e,
+							type: chosen.canvasVariant,
+							hidden: isContainmentType(chosen.canvasVariant),
+							data: {
+								...previous,
+								calmVariant: chosen.canvasVariant,
+								relationshipTypeKey: newType,
+								originalRelationshipType: chosen.preserveType
+									? chosen.relationshipType
+									: undefined,
+								...(metadata ? { metadata } : {}),
+							},
+						}
 					: e
 			)
 		);
 
-		// If changing TO a containment type, establish containment
-		if (isContainmentType(newType)) {
+		if (isContainmentType(chosen.canvasVariant)) {
 			nodes = makeContainment(edge.source, edge.target, nodes);
 		}
 		nodes = syncContainmentRelData(nodes, edges);
@@ -739,13 +768,11 @@
 
 	let edgeMenu = $state<{ x: number; y: number; edgeId: string } | null>(null);
 
-	const EDGE_TYPE_OPTIONS = [
-		{ value: 'connects', label: 'Connects' },
-		{ value: 'interacts', label: 'Interacts' },
-		{ value: 'deployed-in', label: 'Deployed In' },
-		{ value: 'composed-of', label: 'Composed Of' },
-		{ value: 'options', label: 'Options' },
-	];
+	const edgeTypeOptions = $derived.by(() => {
+		const edge = edgeMenu ? edges.find((item) => item.id === edgeMenu.edgeId) : undefined;
+		const current = edge?.data?.relationshipTypeKey;
+		return relationshipTypeChoices(typeof current === 'string' ? current : edge?.type);
+	});
 
 	function handleEdgeContextMenu(event: { event: MouseEvent; edge: Edge }) {
 		if (readonly) return;
@@ -1395,7 +1422,7 @@
 				onclick={(e) => e.stopPropagation()}
 			>
 				<div class="edge-menu-header">Edge Type</div>
-				{#each EDGE_TYPE_OPTIONS as opt}
+				{#each edgeTypeOptions as opt (opt.value)}
 					<button
 						type="button"
 						class="edge-menu-item"

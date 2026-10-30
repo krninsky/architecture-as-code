@@ -256,6 +256,16 @@
             "interacts",
             "options"
           ]
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Values written onto a new relationship of this type. Appearance keys live under metadata.",
+          "properties": {
+            "metadata": {
+              "type": "object"
+            }
+          }
         }
       }
     }
