@@ -349,7 +349,6 @@
 				oninput={handleDescriptionInput}
 				placeholder="Relationship description"
 				aria-label="Relationship description"
-				disabled={!canEdit}
 			></textarea>
 		</div>
 
