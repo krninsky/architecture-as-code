@@ -1,7 +1,11 @@
 ---
-name: 🚀 Experimental Feature Feedback
+name: "\U0001F680 Experimental Feature Feedback"
 about: Gather feedback on an experimental feature added to the codebase
+title: ''
+labels: ''
+assignees: ''
 type: Feature
+
 ---
 
 ## Experiment Feature Feedback

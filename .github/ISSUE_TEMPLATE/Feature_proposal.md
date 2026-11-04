@@ -1,7 +1,11 @@
 ---
-name: 🚀 Feature Proposal
+name: "\U0001F680 Feature Proposal"
 about: Suggest a new feature for an existing project in the monorepo
+title: ''
+labels: ''
+assignees: ''
 type: Feature
+
 ---
 
 ## Feature Proposal

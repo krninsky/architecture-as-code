@@ -1,6 +1,10 @@
 ---
-name: 👥 Maintainer Update
+name: "\U0001F465 Maintainer Update"
 about: Propose adding a new maintainer or removing an existing maintainer
+title: ''
+labels: ''
+assignees: ''
+
 ---
 
 ## Maintainer Update Proposal

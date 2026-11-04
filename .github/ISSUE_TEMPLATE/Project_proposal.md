@@ -1,6 +1,10 @@
 ---
-name: 📋 New Project Proposal
+name: "\U0001F4CB New Project Proposal"
 about: I have a new project proposal for the monorepo
+title: ''
+labels: ''
+assignees: ''
+
 ---
 
 ## Project Proposal
