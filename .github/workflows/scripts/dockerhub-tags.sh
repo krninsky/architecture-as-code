@@ -5,7 +5,7 @@
 set -eu
 
 mode=nightly
-if [ "$EVENT_NAME" = "push" ]; then
+if [ "$EVENT_NAME" = "push" ] && [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
     mode=release
 elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
     mode="${CHANNEL:-nightly}"

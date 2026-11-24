@@ -1,7 +1,7 @@
 name: Docker Hub Publish calm-studio
 
 # Fork publishing for krninsky/calm-studio.
-# Nightly: after the CALM Studio build succeeds on main.
+# Nightly: push to main.
 # Release: tag push vX.Y.Z, calm-studio-v*, or release-*.
 # A calm-hub-v* tag does not publish this image.
 # studio-* tags are not in this filter. Publish those with workflow_dispatch.
@@ -10,12 +10,9 @@ permissions:
     contents: read
 
 on:
-    workflow_run:
-        workflows:
-            - Build CALM Studio
-        types:
-            - completed
     push:
+        branches:
+            - main
         tags:
             - 'v*.*.*'
             - 'calm-studio-v*'
@@ -35,7 +32,7 @@ on:
                 type: string
 
 concurrency:
-    group: dockerhub-publish-calm-studio-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event_name }}
+    group: dockerhub-publish-calm-studio-${{ github.sha }}-${{ github.event_name }}
     cancel-in-progress: false
 
 jobs:
@@ -43,25 +40,11 @@ jobs:
         name: Publish calm-studio
         if: >-
             github.repository == 'krninsky/architecture-as-code' &&
-            (
-              (
-                github.event_name == 'workflow_run' &&
-                github.event.workflow_run.conclusion == 'success' &&
-                github.event.workflow_run.event == 'push' &&
-                github.event.workflow_run.head_branch == 'main' &&
-                github.event.workflow_run.head_repository.full_name == github.repository &&
-                github.event.workflow_run.name == 'Build CALM Studio'
-              ) ||
-              (
-                github.event_name == 'push' &&
-                startsWith(github.ref, 'refs/tags/')
-              ) ||
-              github.event_name == 'workflow_dispatch'
-            )
+            (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         runs-on: ubuntu-latest
         timeout-minutes: 180
         env:
-            SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+            SOURCE_SHA: ${{ github.sha }}
         steps:
             - name: Checkout
               uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
